@@ -1,0 +1,73 @@
+package com.example.aiassistant
+
+import android.content.Context
+
+object SafetyChecker {
+
+    private const val PREFS = "ai_assistant_prefs"
+    private const val KEY_EXCLUDED_APPS = "excluded_apps"
+    private const val COOLDOWN_MS = 800L
+
+    private var lastActionTime = 0L
+
+    /**
+     * Dangerous keywords — never auto-click elements containing these.
+     */
+    private val blockedKeywords = setOf(
+        "purchase", "buy", "pay", "payment", "checkout",
+        "delete", "remove", "uninstall", "format", "erase", "wipe",
+        "send money", "transfer funds", "confirm payment", "place order",
+        "reset", "factory reset", "clear data",
+        "subscribe", "upgrade plan", "billing"
+    )
+
+    /**
+     * Returns true if enough time has passed since the last action.
+     */
+    fun checkCooldown(): Boolean {
+        val now = System.currentTimeMillis()
+        return (now - lastActionTime) >= COOLDOWN_MS
+    }
+
+    fun recordActionTime() {
+        lastActionTime = System.currentTimeMillis()
+    }
+
+    /**
+     * Returns true if the action target does NOT contain any blocked keywords.
+     */
+    fun isActionSafe(command: ActionCommand): Boolean {
+        val lower = command.target.lowercase()
+        return blockedKeywords.none { lower.contains(it) }
+    }
+
+    /**
+     * Returns true if the app is NOT in the exclusion list.
+     */
+    fun isAppAllowed(context: Context, packageName: String): Boolean {
+        val excluded = getExcludedApps(context)
+        return packageName !in excluded
+    }
+
+    fun getExcludedApps(context: Context): Set<String> {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getStringSet(KEY_EXCLUDED_APPS, emptySet()) ?: emptySet()
+    }
+
+    fun setExcludedApps(context: Context, apps: Set<String>) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putStringSet(KEY_EXCLUDED_APPS, apps).apply()
+    }
+
+    fun addExcludedApp(context: Context, packageName: String) {
+        val current = getExcludedApps(context).toMutableSet()
+        current.add(packageName)
+        setExcludedApps(context, current)
+    }
+
+    fun removeExcludedApp(context: Context, packageName: String) {
+        val current = getExcludedApps(context).toMutableSet()
+        current.remove(packageName)
+        setExcludedApps(context, current)
+    }
+}

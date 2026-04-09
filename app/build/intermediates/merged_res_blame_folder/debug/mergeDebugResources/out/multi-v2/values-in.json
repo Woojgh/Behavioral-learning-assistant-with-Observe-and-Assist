@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.example.aiassistant.app-mergeDebugResources-11:/values-in/values-in.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\citizen\\.gradle\\caches\\8.13\\transforms\\308f55bb2cf68f0952f74723cf8e53b3\\transformed\\core-1.12.0\\res\\values-in\\values-in.xml",
+                    "from": {
+                        "startLines": "2,3,4,5,6,7,8,9",
+                        "startColumns": "4,4,4,4,4,4,4,4",
+                        "startOffsets": "55,150,252,349,446,552,670,785",
+                        "endColumns": "94,101,96,96,105,117,114,100",
+                        "endOffsets": "145,247,344,441,547,665,780,881"
+                    }
+                }
+            ]
+        }
+    ]
+}
