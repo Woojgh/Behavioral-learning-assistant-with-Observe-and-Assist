@@ -10,18 +10,19 @@ import android.view.accessibility.AccessibilityEvent
 object Observer {
 
     /**
-     * Process a user-initiated action event.
-     * Call this when TYPE_VIEW_CLICKED, TYPE_VIEW_SCROLLED, or TYPE_VIEW_TEXT_CHANGED
-     * is detected — these represent what the *user* actually did.
+     * Record a user action from pre-extracted data.
+     * The caller must extract text/eventType from the AccessibilityEvent
+     * SYNCHRONOUSLY before launching a coroutine, because Android recycles
+     * event objects after onAccessibilityEvent returns.
      */
-    suspend fun onUserAction(
+    suspend fun onUserActionDirect(
         context: Context,
-        event: AccessibilityEvent,
+        actionText: String,
+        eventType: Int,
         currentState: String,
         packageName: String
     ) {
-        val actionText = extractActionText(event) ?: return
-        val actionType = mapEventType(event.eventType)
+        val actionType = mapEventType(eventType)
 
         DatabaseHelper.recordPattern(
             context = context,
@@ -30,20 +31,6 @@ object Observer {
             actionText = actionText,
             actionType = actionType
         )
-    }
-
-    private fun extractActionText(event: AccessibilityEvent): String? {
-        // Try to get the text of the element the user interacted with
-        event.text?.let { texts ->
-            val joined = texts.joinToString(" ").trim()
-            if (joined.isNotEmpty()) return joined
-        }
-
-        event.contentDescription?.toString()?.let {
-            if (it.isNotEmpty()) return it
-        }
-
-        return null
     }
 
     private fun mapEventType(eventType: Int): String {
