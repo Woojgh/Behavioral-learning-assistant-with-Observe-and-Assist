@@ -1,4 +1,5 @@
 # Behavioral Learning Assistant
+ex. Auto Skip Ads
 
 An Android accessibility service that **learns how you use your phone** by observing your taps, scrolls, and text input — then **replays your patterns hands-free** when you need it.
 
