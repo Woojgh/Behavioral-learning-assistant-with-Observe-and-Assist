@@ -2,7 +2,7 @@
 
 An Android accessibility service that **learns how you use your phone** by observing your taps, scrolls, and text input — then **replays your patterns hands-free** when you need it.
 
-No cloud. No LLM. All intelligence comes from watching *you*.
+No cloud. No LLM. All intelligence comes from watching *you*, basically I made it to click skip for me when my hands are full.
 
 ---
 
