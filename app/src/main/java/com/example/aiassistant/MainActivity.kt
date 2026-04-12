@@ -169,12 +169,17 @@ class MainActivity : Activity() {
         }
     }
 
+    private var overlayRunning = false
+
     private fun toggleOverlay() {
         val intent = Intent(this, OverlayService::class.java)
-        try {
+        if (overlayRunning) {
             stopService(intent)
-        } catch (_: Exception) {}
-        startForegroundService(intent)
+            overlayRunning = false
+        } else {
+            startForegroundService(intent)
+            overlayRunning = true
+        }
     }
 
     private fun buttonParams(): LinearLayout.LayoutParams {

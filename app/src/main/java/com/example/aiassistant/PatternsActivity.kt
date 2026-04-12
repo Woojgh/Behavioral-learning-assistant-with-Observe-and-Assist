@@ -3,6 +3,8 @@ package com.example.aiassistant
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
+import android.graphics.Color
+import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -12,14 +14,20 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * Shows all learned user-behaviour patterns with per-item delete and a Clear All option.
+ * Shows learned patterns grouped by app, with expandable sections
+ * and separated detail lines for each pattern.
  */
 class PatternsActivity : Activity() {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private lateinit var listView: ListView
+    private lateinit var expandableList: ExpandableListView
     private lateinit var statsText: TextView
     private var patterns = listOf<UserPatternEntity>()
+
+    /** App package names in display order */
+    private var appNames = listOf<String>()
+    /** Patterns grouped by app */
+    private var groupedPatterns = mapOf<String, List<UserPatternEntity>>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,10 +62,10 @@ class PatternsActivity : Activity() {
         }
         root.addView(statsText)
 
-        // Pattern list
-        listView = ListView(this)
+        // Expandable pattern list grouped by app
+        expandableList = ExpandableListView(this)
         root.addView(
-            listView,
+            expandableList,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -73,6 +81,8 @@ class PatternsActivity : Activity() {
             patterns = withContext(Dispatchers.IO) {
                 DatabaseHelper.getDB(this@PatternsActivity).userPatternDao().getAll()
             }
+            groupedPatterns = patterns.groupBy { it.packageName }
+            appNames = groupedPatterns.keys.sorted()
             refreshList()
         }
     }
@@ -93,6 +103,8 @@ class PatternsActivity : Activity() {
                 DatabaseHelper.getDB(this@PatternsActivity).userPatternDao().deleteAll()
             }
             patterns = emptyList()
+            groupedPatterns = emptyMap()
+            appNames = emptyList()
             refreshList()
         }
     }
@@ -114,53 +126,115 @@ class PatternsActivity : Activity() {
     }
 
     private fun refreshList() {
-        val appCount = patterns.map { it.packageName }.distinct().size
         statsText.text = if (patterns.isEmpty()) {
             "No patterns learned yet."
         } else {
-            "${patterns.size} pattern(s) across $appCount app(s)"
+            "${patterns.size} pattern(s) across ${appNames.size} app(s)"
         }
 
         if (patterns.isEmpty()) {
-            listView.adapter = null
+            expandableList.setAdapter(null as BaseExpandableListAdapter?)
             return
         }
 
         val dateFmt = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
 
-        listView.adapter = object : BaseAdapter() {
-            override fun getCount() = patterns.size
-            override fun getItem(pos: Int) = patterns[pos]
-            override fun getItemId(pos: Int) = patterns[pos].id.toLong()
+        expandableList.setAdapter(object : BaseExpandableListAdapter() {
 
-            override fun getView(pos: Int, convertView: View?, parent: ViewGroup?): View {
-                val p = patterns[pos]
+            override fun getGroupCount() = appNames.size
+            override fun getChildrenCount(groupPos: Int): Int {
+                return groupedPatterns[appNames[groupPos]]?.size ?: 0
+            }
+            override fun getGroup(groupPos: Int) = appNames[groupPos]
+            override fun getChild(groupPos: Int, childPos: Int): UserPatternEntity {
+                return groupedPatterns[appNames[groupPos]]!![childPos]
+            }
+            override fun getGroupId(groupPos: Int) = groupPos.toLong()
+            override fun getChildId(groupPos: Int, childPos: Int) =
+                getChild(groupPos, childPos).id.toLong()
+            override fun hasStableIds() = true
+            override fun isChildSelectable(groupPos: Int, childPos: Int) = false
+
+            override fun getGroupView(
+                groupPos: Int, isExpanded: Boolean,
+                convertView: View?, parent: ViewGroup?
+            ): View {
+                val app = appNames[groupPos]
+                val count = groupedPatterns[app]?.size ?: 0
+                val appLabel = simplifyPackageName(app)
+
+                return LinearLayout(this@PatternsActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(48, 20, 16, 20)
+
+                    addView(TextView(this@PatternsActivity).apply {
+                        text = appLabel
+                        textSize = 17f
+                        setTypeface(null, Typeface.BOLD)
+                    })
+                    addView(TextView(this@PatternsActivity).apply {
+                        text = "$count pattern(s)  •  ${if (isExpanded) "▲" else "▼"}"
+                        textSize = 12f
+                        setTextColor(0xFF888888.toInt())
+                    })
+                }
+            }
+
+            override fun getChildView(
+                groupPos: Int, childPos: Int, isLastChild: Boolean,
+                convertView: View?, parent: ViewGroup?
+            ): View {
+                val p = getChild(groupPos, childPos)
 
                 val row = LinearLayout(this@PatternsActivity).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(8, 12, 8, 12)
+                    setPadding(64, 8, 16, 8)
                 }
 
-                // Info column
-                val info = LinearLayout(this@PatternsActivity).apply {
+                // Detail column
+                val detail = LinearLayout(this@PatternsActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     layoutParams = LinearLayout.LayoutParams(
                         0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
                     )
                 }
-                info.addView(TextView(this@PatternsActivity).apply {
-                    text = "[${p.actionType}]  ${p.actionText}"
+
+                // Action text
+                detail.addView(TextView(this@PatternsActivity).apply {
+                    text = p.actionText
                     textSize = 15f
                 })
-                info.addView(TextView(this@PatternsActivity).apply {
-                    text = "${p.packageName}  •  seen ${p.count}×  •  ${dateFmt.format(Date(p.lastSeen))}"
+
+                // Action type badge + count
+                val metaRow = LinearLayout(this@PatternsActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, 4, 0, 0)
+                }
+                metaRow.addView(TextView(this@PatternsActivity).apply {
+                    text = " ${p.actionType} "
                     textSize = 11f
-                    setTextColor(0xFF888888.toInt())
+                    setTextColor(Color.WHITE)
+                    setBackgroundColor(actionTypeColor(p.actionType))
+                    setPadding(12, 2, 12, 2)
+                })
+                metaRow.addView(TextView(this@PatternsActivity).apply {
+                    text = "  seen ${p.count}×"
+                    textSize = 12f
+                    setTextColor(0xFF666666.toInt())
+                })
+                detail.addView(metaRow)
+
+                // Last seen
+                detail.addView(TextView(this@PatternsActivity).apply {
+                    text = "Last: ${dateFmt.format(Date(p.lastSeen))}"
+                    textSize = 11f
+                    setTextColor(0xFFAAAAAA.toInt())
                     setPadding(0, 2, 0, 0)
                 })
 
-                row.addView(info)
+                row.addView(detail)
 
                 // Delete button
                 row.addView(Button(this@PatternsActivity).apply {
@@ -172,6 +246,28 @@ class PatternsActivity : Activity() {
 
                 return row
             }
+        })
+
+        // Expand all groups by default
+        for (i in appNames.indices) {
+            expandableList.expandGroup(i)
+        }
+    }
+
+    /** Turn "com.example.myapp" into "myapp" for cleaner display. */
+    private fun simplifyPackageName(pkg: String): String {
+        val last = pkg.substringAfterLast('.')
+        return if (last.isNotEmpty() && last != pkg) "$last  ($pkg)" else pkg
+    }
+
+    /** Color-code action type badges. */
+    private fun actionTypeColor(type: String): Int {
+        return when (type.uppercase()) {
+            "CLICK" -> 0xFF4CAF50.toInt()   // green
+            "SCROLL" -> 0xFF2196F3.toInt()   // blue
+            "TYPE" -> 0xFFFF9800.toInt()      // orange
+            "SWIPE" -> 0xFF9C27B0.toInt()     // purple
+            else -> 0xFF757575.toInt()         // grey
         }
     }
 

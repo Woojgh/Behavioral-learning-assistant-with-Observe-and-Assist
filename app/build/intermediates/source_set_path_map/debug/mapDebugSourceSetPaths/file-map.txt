@@ -7,10 +7,10 @@ com.example.aiassistant.app-sqlite-framework-2.4.0-5 C:\Users\citizen\.gradle\ca
 com.example.aiassistant.app-lifecycle-runtime-2.3.1-6 C:\Users\citizen\.gradle\caches\8.13\transforms\64faf79946f8c553fead98498c9bb1c2\transformed\lifecycle-runtime-2.3.1\res
 com.example.aiassistant.app-room-runtime-2.6.1-7 C:\Users\citizen\.gradle\caches\8.13\transforms\d268aa3f79d34641e996813b3efedfcb\transformed\room-runtime-2.6.1\res
 com.example.aiassistant.app-core-ktx-1.12.0-8 C:\Users\citizen\.gradle\caches\8.13\transforms\ef6f0521e17a288c375c767f33d7cb68\transformed\core-ktx-1.12.0\res
-com.example.aiassistant.app-pngs-9 C:\Users\citizen\Downloads\AIAssistantPersistent\app\build\generated\res\pngs\debug
-com.example.aiassistant.app-resValues-10 C:\Users\citizen\Downloads\AIAssistantPersistent\app\build\generated\res\resValues\debug
-com.example.aiassistant.app-packageDebugResources-11 C:\Users\citizen\Downloads\AIAssistantPersistent\app\build\intermediates\incremental\debug\packageDebugResources\merged.dir
-com.example.aiassistant.app-packageDebugResources-12 C:\Users\citizen\Downloads\AIAssistantPersistent\app\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
-com.example.aiassistant.app-debug-13 C:\Users\citizen\Downloads\AIAssistantPersistent\app\build\intermediates\merged_res\debug\mergeDebugResources
-com.example.aiassistant.app-debug-14 C:\Users\citizen\Downloads\AIAssistantPersistent\app\src\debug\res
-com.example.aiassistant.app-main-15 C:\Users\citizen\Downloads\AIAssistantPersistent\app\src\main\res
+com.example.aiassistant.app-pngs-9 C:\Users\citizen\Downloads\Behavioral learning assistant with Observe and Assist\app\build\generated\res\pngs\debug
+com.example.aiassistant.app-resValues-10 C:\Users\citizen\Downloads\Behavioral learning assistant with Observe and Assist\app\build\generated\res\resValues\debug
+com.example.aiassistant.app-packageDebugResources-11 C:\Users\citizen\Downloads\Behavioral learning assistant with Observe and Assist\app\build\intermediates\incremental\debug\packageDebugResources\merged.dir
+com.example.aiassistant.app-packageDebugResources-12 C:\Users\citizen\Downloads\Behavioral learning assistant with Observe and Assist\app\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
+com.example.aiassistant.app-debug-13 C:\Users\citizen\Downloads\Behavioral learning assistant with Observe and Assist\app\build\intermediates\merged_res\debug\mergeDebugResources
+com.example.aiassistant.app-debug-14 C:\Users\citizen\Downloads\Behavioral learning assistant with Observe and Assist\app\src\debug\res
+com.example.aiassistant.app-main-15 C:\Users\citizen\Downloads\Behavioral learning assistant with Observe and Assist\app\src\main\res
