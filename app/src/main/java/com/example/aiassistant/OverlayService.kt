@@ -48,6 +48,9 @@ class OverlayService : Service() {
     private var panelView: LinearLayout? = null
     private var panelStatusTv: TextView? = null
     private val panelModeBtns = Array<Button?>(3) { null } // [OFF, OBSERVE, ASSIST]
+    private var panelServiceStatusTv: TextView? = null
+    private var panelServiceBtn: Button? = null
+    private var panelRefreshRunnable: Runnable? = null
 
     private var lastStatus = "AI Ready"
 
@@ -271,7 +274,7 @@ class OverlayService : Service() {
         // page in Settings so the user can flip the toggle themselves in one tap.
         panel.addView(sectionLabel("Accessibility Service", bottomPad = dp(4)))
         val svcConnected = AutoAccessibilityService.instance != null
-        panel.addView(TextView(this).apply {
+        val svcStatusTv = TextView(this).apply {
             text = if (svcConnected) "● Connected" else "● Disconnected"
             textSize = 12f
             setTextColor(
@@ -279,9 +282,12 @@ class OverlayService : Service() {
                 else Color.argb(230, 220, 80, 80)
             )
             setPadding(0, 0, 0, dp(6))
-        }, fullWidthWrap())
-        val svcBtnLabel = if (svcConnected) "Disable Service →" else "Enable Service →"
-        panel.addView(actionButton(svcBtnLabel) {
+        }
+        panelServiceStatusTv = svcStatusTv
+        panel.addView(svcStatusTv, fullWidthWrap())
+        val svcBtn = actionButton(
+            if (svcConnected) "Disable Service \u2192" else "Enable Service \u2192"
+        ) {
             // Deep-link directly to this service's toggle in accessibility settings
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             val bundle = Bundle()
@@ -293,7 +299,9 @@ class OverlayService : Service() {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(intent)
             dismissPanel()
-        })
+        }
+        panelServiceBtn = svcBtn
+        panel.addView(svcBtn)
 
         // -- Open App --
         panel.addView(actionButton("Open App") {
@@ -305,13 +313,64 @@ class OverlayService : Service() {
 
         wm.addView(panel, panelParams)
         panelView = panel
+        startPanelRefresh()
     }
 
     private fun dismissPanel() {
+        stopPanelRefresh()
         safeRemove(panelView)
         panelView = null
         panelStatusTv = null
+        panelServiceStatusTv = null
+        panelServiceBtn = null
         panelModeBtns.fill(null)
+    }
+
+    /**
+     * Starts a 1-second repeating tick that refreshes dynamic panel content
+     * (service connection state, mode button highlights, bubble colour)
+     * while the panel is open.
+     */
+    private fun startPanelRefresh() {
+        val runnable = object : Runnable {
+            override fun run() {
+                if (panelView != null) {
+                    refreshPanelContent()
+                    mainHandler.postDelayed(this, 1_000L)
+                }
+            }
+        }
+        panelRefreshRunnable = runnable
+        mainHandler.postDelayed(runnable, 1_000L)
+    }
+
+    private fun stopPanelRefresh() {
+        panelRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
+        panelRefreshRunnable = null
+    }
+
+    /** Updates all live-changing fields inside the open panel. */
+    private fun refreshPanelContent() {
+        // Service connection status
+        val connected = AutoAccessibilityService.instance != null
+        panelServiceStatusTv?.apply {
+            text = if (connected) "\u25cf Connected" else "\u25cf Disconnected"
+            setTextColor(
+                if (connected) Color.argb(230, 80, 210, 130)
+                else Color.argb(230, 220, 80, 80)
+            )
+        }
+        panelServiceBtn?.text =
+            if (connected) "Disable Service \u2192" else "Enable Service \u2192"
+
+        // Mode button highlights (in case mode changed from the main app)
+        val currentMode = AutoAccessibilityService.cachedMode
+        listOf(AgentMode.OFF, AgentMode.OBSERVE, AgentMode.ASSIST).forEachIndexed { i, mode ->
+            panelModeBtns[i]?.setBackgroundColor(modeBtnColor(mode, active = mode == currentMode))
+        }
+
+        // Keep bubble in sync too
+        updateBubbleAppearance()
     }
 
     // -------------------------------------------------------------------------
