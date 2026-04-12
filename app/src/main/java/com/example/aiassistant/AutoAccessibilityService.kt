@@ -15,6 +15,10 @@ class AutoAccessibilityService : AccessibilityService() {
         private const val PREFS = "ai_assistant_prefs"
         private const val KEY_MODE = "agent_mode"
 
+        /** Latest screen snapshot — read by SystemStateMonitor for context correlation. */
+        @Volatile
+        var lastSnapshot: ScreenSnapshot? = null
+
         /** Cached mode — avoids reading SharedPreferences on every event. */
         @Volatile
         var cachedMode: AgentMode = AgentMode.OFF
@@ -39,6 +43,7 @@ class AutoAccessibilityService : AccessibilityService() {
     private var lastScreenState: String? = null
     private var lastSnapshotTime = 0L
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private var systemStateMonitor: SystemStateMonitor? = null
 
     /** Prevents coroutine pileup — skip if previous work is still running. */
     private val observeBusy = AtomicBoolean(false)
@@ -51,6 +56,8 @@ class AutoAccessibilityService : AccessibilityService() {
         instance = this
         // Load cached mode from prefs once at startup
         getMode(this)
+        // Start monitoring system setting changes
+        systemStateMonitor = SystemStateMonitor(this).also { it.start() }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -115,9 +122,19 @@ class AutoAccessibilityService : AccessibilityService() {
                 return
             }
 
+            // Update lastSnapshot for SystemStateMonitor context correlation
+            lastSnapshot = snapshot
+
             // Debounce: skip if same screen state
             if (snapshot.stableState == lastScreenState) return
             lastScreenState = snapshot.stableState
+
+            // Check system patterns (runs in both modes, only acts in ASSIST)
+            scope.launch {
+                try {
+                    ScreenReactor.checkAndReact(this@AutoAccessibilityService, snapshot, mode)
+                } catch (_: Exception) { }
+            }
 
             // Only run assist engine in ASSIST mode
             if (mode == AgentMode.ASSIST && assistBusy.compareAndSet(false, true)) {
@@ -155,6 +172,9 @@ class AutoAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        systemStateMonitor?.stop()
+        systemStateMonitor = null
+        lastSnapshot = null
         instance = null
         scope.cancel()
     }
