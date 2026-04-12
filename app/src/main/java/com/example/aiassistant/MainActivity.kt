@@ -125,6 +125,14 @@ class MainActivity : Activity() {
             }
         }, buttonParams())
 
+        // --- View Patterns ---
+        layout.addView(Button(this).apply {
+            text = "View Patterns"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, PatternsActivity::class.java))
+            }
+        }, buttonParams())
+
         scroll.addView(layout)
         setContentView(scroll)
     }
@@ -161,12 +169,17 @@ class MainActivity : Activity() {
         }
     }
 
+    private var overlayRunning = false
+
     private fun toggleOverlay() {
         val intent = Intent(this, OverlayService::class.java)
-        try {
+        if (overlayRunning) {
             stopService(intent)
-        } catch (_: Exception) {}
-        startForegroundService(intent)
+            overlayRunning = false
+        } else {
+            startForegroundService(intent)
+            overlayRunning = true
+        }
     }
 
     private fun buttonParams(): LinearLayout.LayoutParams {

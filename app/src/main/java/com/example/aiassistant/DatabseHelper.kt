@@ -37,6 +37,21 @@ data class UserPatternEntity(
     val lastSeen: Long = System.currentTimeMillis()
 )
 
+@Entity(
+    indices = [Index(value = ["screenState", "settingName", "newValue"], unique = true)]
+)
+data class SystemPatternEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val packageName: String,
+    val screenState: String,
+    val matchedKeywords: String,
+    val settingName: String,
+    val oldValue: String,
+    val newValue: String,
+    val count: Int = 1,
+    val lastSeen: Long = System.currentTimeMillis()
+)
+
 // --- DAOs ---
 
 @Dao
@@ -94,19 +109,53 @@ interface UserPatternDao {
 
     @Query("SELECT COUNT(DISTINCT packageName) FROM UserPatternEntity")
     suspend fun distinctApps(): Int
+
+    @Query("SELECT * FROM UserPatternEntity ORDER BY packageName ASC, count DESC")
+    suspend fun getAll(): List<UserPatternEntity>
+
+    @Delete
+    suspend fun delete(pattern: UserPatternEntity)
+
+    @Query("DELETE FROM UserPatternEntity")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface SystemPatternDao {
+    @Query("SELECT * FROM SystemPatternEntity WHERE screenState = :screenState ORDER BY count DESC")
+    suspend fun getByScreenState(screenState: String): List<SystemPatternEntity>
+
+    @Query("SELECT * FROM SystemPatternEntity WHERE screenState = :screenState AND settingName = :settingName AND newValue = :newValue LIMIT 1")
+    suspend fun get(screenState: String, settingName: String, newValue: String): SystemPatternEntity?
+
+    @Insert
+    suspend fun insert(pattern: SystemPatternEntity)
+
+    @Query("UPDATE SystemPatternEntity SET count = count + 1, lastSeen = :now WHERE id = :id")
+    suspend fun incrementCount(id: Int, now: Long = System.currentTimeMillis())
+
+    @Query("SELECT * FROM SystemPatternEntity ORDER BY packageName ASC, count DESC")
+    suspend fun getAll(): List<SystemPatternEntity>
+
+    @Delete
+    suspend fun delete(pattern: SystemPatternEntity)
+
+    @Query("DELETE FROM SystemPatternEntity")
+    suspend fun deleteAll()
 }
 
 // --- Database ---
 
 @Database(
-    entities = [LogEntity::class, RuleEntity::class, UserPatternEntity::class],
-    version = 3,
+    entities = [LogEntity::class, RuleEntity::class, UserPatternEntity::class, SystemPatternEntity::class],
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun logDao(): LogDao
     abstract fun ruleDao(): RuleDao
     abstract fun userPatternDao(): UserPatternDao
+    abstract fun systemPatternDao(): SystemPatternDao
 }
 
 // --- Helper ---

@@ -1,103 +1,122 @@
 # Behavioral Learning Assistant
-ex. Auto Skip Ads
 
-An Android accessibility service that **learns how you use your phone** by observing your taps, scrolls, and text input — then **replays your patterns hands-free** when you need it.
+An Android app that watches how you use your phone — then does it for you.
 
-No cloud. No LLM. All intelligence comes from watching *you*, basically I made it to click skip for me when my hands are full.
+No cloud. No LLM. No programming required. It learns by watching you, and it gets better the more you use it.
+
+---
+
+## Why This Exists
+
+Every day you do the same things on your phone: dismiss cookie banners, skip ad screens, tap "Allow" on permission dialogs, lower the volume when an ad starts playing, close pop-ups. You do these things without thinking — but you still have to do them.
+
+This app learns those patterns and handles them automatically, especially when your hands are busy.
+
+---
+
+## Real-World Use Cases
+
+### Hands-Free Phone Operation
+You're cooking, driving, working out, or carrying groceries. Your phone keeps interrupting with dialogs that need a tap. The assistant handles them — it already knows what you'd click because it watched you do it before.
+
+### Accessibility for Motor Impairments
+Someone with limited hand mobility can have a caregiver use the phone normally for a day. The app learns the caregiver's patterns, then replays them — giving the user independent control without needing to precisely tap small UI targets.
+
+### Repetitive Dialog Dismissal
+Cookie consent banners. "Rate this app" pop-ups. Permission requests. Onboarding screens you've seen a hundred times. The app clicks through all of them once it's seen you do it 3 times on the same screen.
+
+### Context-Aware System Settings
+The app correlates **what's on your screen** with **system changes you make**. If you always lower the volume when an ad appears ("Sponsored", "Visit Advertiser"), it learns that. If you raise brightness in a specific app, it learns that too. It tracks:
+
+- **Volume** (media, ring, alarm, notification)
+- **Screen brightness**
+- **Auto-rotate**
+- **Ringer mode** (silent, vibrate, normal)
+
+After 3 observations of the same change on the same screen, it does it automatically in Assist mode.
+
+### Elderly & Non-Technical Users
+A family member sets up the phone, uses it normally for a few days. The app builds a map of "what to do on every screen." The actual user then gets guided through their phone without needing to remember which button does what.
 
 ---
 
 ## How It Works
 
-The app runs as an Android Accessibility Service with two operational modes:
+The app runs as an Android Accessibility Service with two modes:
 
-### Observe Mode
-The assistant silently watches your interactions across every app on your device. Each time you tap a button, scroll a list, or enter text, it records:
+### Observe Mode (Learning)
+Silently watches everything you do across all apps:
+- Every tap, scroll, and text input is recorded
+- Every screen layout is fingerprinted by its structure (not its text, so dynamic content doesn't break recognition)
+- Every system setting change (volume, brightness, etc.) is tagged with what was on screen at the time
 
-- **What** you interacted with (the text/label of the element)
-- **Where** you were (a stable structural fingerprint of the screen layout)
-- **Which app** you were in
+All data stays on your device. Nothing is uploaded anywhere.
 
-These observations are stored locally as **patterns** in a Room database. The more you repeat an action on a given screen, the higher its confidence score becomes.
+### Assist Mode (Acting)
+Replays your patterns when it recognizes a screen:
+1. Identifies the current screen by its structural fingerprint
+2. Looks up what you usually do on this screen
+3. Checks safety rules (won't click "Purchase", "Delete", "Pay", etc.)
+4. Acts — taps, scrolls, swipes, types, or adjusts system settings
 
-### Assist Mode
-When you go hands-free, the assistant takes over. For each screen it encounters, it:
+If it hasn't seen you on this screen enough times (< 3), it does nothing. It never guesses.
 
-1. Looks up learned patterns for that screen's structural signature
-2. Picks the action you perform most frequently (only if observed 3+ times)
-3. Runs the action through a safety checker
-4. Executes if safe — clicks, scrolls, swipes, or types on your behalf
+---
 
-If no confident learned pattern exists, it falls back to configurable keyword rules (e.g., auto-click "Skip", "Allow", "OK").
+## What Makes This Different
+
+| Feature | This App | Tasker / MacroDroid |
+|---------|----------|--------------------|
+| Setup | Use your phone normally | Write rules/scripts manually |
+| Triggers | Screen content + layout | App launch, time, location |
+| Learning | Automatic from observation | None — fully manual |
+| System correlation | "Lower volume when ad keywords appear" | "Lower volume when app opens" |
+| Screen recognition | Structural fingerprinting | Not available |
+
+The key difference: existing automation tools trigger on **app-level events** (app opened, time of day). This app triggers on **screen-level content** — it knows *which screen within an app* you're on, and *what text is visible*.
+
+---
+
+## Safety
+
+The assistant will not:
+- Click anything containing "purchase", "buy", "pay", "delete", "uninstall", "reset", or similar dangerous keywords
+- Act on apps you've excluded in Safety Settings
+- Take any action it hasn't observed you perform at least 3 times
+- Fire actions faster than every 800ms
+- Act at all in Observe mode
+
+Every action (taken or blocked) is logged with timestamps so you can review exactly what happened.
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│              AutoAccessibilityService                │
-│  ┌─────────────┐    ┌─────────────────────────────┐  │
-│  │  Observer    │    │  AssistEngine               │  │
-│  │  (always on) │    │  (ASSIST mode only)         │  │
-│  │             │    │                             │  │
-│  │  Records    │    │  SafetyChecker              │  │
-│  │  user taps, │    │    ↓                        │  │
-│  │  scrolls,   │    │  PatternMatcher             │  │
-│  │  text input │    │    ↓                        │  │
-│  └──────┬──────┘    │  ActionExecutor             │  │
-│         │           └──────────────┬──────────────┘  │
-│         ↓                          ↓                 │
-│  ┌──────────────────────────────────────────────┐    │
-│  │              Room Database                    │    │
-│  │  UserPatternEntity  RuleEntity  LogEntity     │    │
-│  └──────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                 AutoAccessibilityService                     │
+│                                                              │
+│  ┌─────────────┐  ┌──────────────────┐  ┌────────────────┐  │
+│  │  Observer    │  │  AssistEngine    │  │ ScreenReactor  │  │
+│  │  (always on) │  │  (ASSIST only)   │  │ (ASSIST only)  │  │
+│  │             │  │                  │  │                │  │
+│  │  User taps, │  │  SafetyChecker   │  │ Matches system │  │
+│  │  scrolls,   │  │  PatternMatcher  │  │ patterns to    │  │
+│  │  text input │  │  ActionExecutor  │  │ screen context │  │
+│  └──────┬──────┘  └────────┬─────────┘  └───────┬────────┘  │
+│         │                  │                    │            │
+│  ┌──────┴──────────────────┴────────────────────┴────────┐  │
+│  │  SystemStateMonitor                                    │  │
+│  │  Watches volume, brightness, ringer, rotation changes  │  │
+│  │  Tags each with current screen context                 │  │
+│  └───────────────────────────┬────────────────────────────┘  │
+│                              │                               │
+│  ┌───────────────────────────┴────────────────────────────┐  │
+│  │                    Room Database                        │  │
+│  │  UserPatternEntity  SystemPatternEntity  LogEntity      │  │
+│  └────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
 ```
-
-### Key Components
-
-| File | Purpose |
-|------|--------|
-| `AutoAccessibilityService.kt` | Core service. Dual-mode event handling (OBSERVE/ASSIST). Builds screen snapshots synchronously to avoid stale-node crashes. |
-| `Observer.kt` | Records user-initiated clicks, scrolls, and text input as patterns in the database. Runs in both modes. |
-| `AssistEngine.kt` | Orchestrates the assist pipeline: debounce → app exclusion → pattern match → safety check → execute → log → overlay update. |
-| `PatternMatcher.kt` | Finds the best action for a screen. Queries learned patterns first (requires 3+ observations), falls back to keyword rules. |
-| `SafetyChecker.kt` | Blocks dangerous actions (purchase, delete, pay, etc.), enforces app exclusions, and provides 800ms cooldown between actions. |
-| `ActionExecutor.kt` | Executes actions against the live UI tree: click, scroll forward/backward, swipe (gesture-based), and type text. |
-| `ScreenSnapshot.kt` | Immutable data model capturing the full UI state. Built synchronously from `AccessibilityNodeInfo` before any async work. |
-| `UIUtils.kt` | Builds `ScreenSnapshot` objects and generates stable structural signatures using class names + interactivity flags (not text content). |
-| `DatabseHelper.kt` | Room database with entities for user patterns, keyword rules, and action logs. Handles pattern upsert logic. |
-| `OverlayService.kt` | Foreground service that shows a floating bubble with the last action taken. |
-| `MainActivity.kt` | Control panel: mode selector (OFF → OBSERVE → ASSIST), learning stats, links to all settings screens. |
-| `RulesActivity.kt` | Manage keyword-based fallback rules (e.g., auto-click "Skip" with action type CLICK). |
-| `LogActivity.kt` | Scrollable history of all actions taken, with timestamps and success/failure indicators. |
-| `SafetyActivity.kt` | Block or allow specific apps from being automated. |
-| `ActionCommand.kt` | Data model for actions with type enum (CLICK, SCROLL_FORWARD, SCROLL_BACKWARD, SWIPE, TYPE) and target text. |
-
----
-
-## Screen Identification
-
-The app identifies screens using a **stable structural signature** rather than raw text content. This means:
-
-- A screen's identity is determined by the **types of UI elements** present and their **interactivity flags** (clickable, scrollable, editable)
-- Changing text content (timestamps, counters, notifications) does **not** change the screen identity
-- The signature format is `packageName:structuralHash`
-
-This allows the assistant to recognize "the same screen" reliably across visits, even when dynamic content changes.
-
----
-
-## Safety
-
-The assistant includes multiple safety layers:
-
-- **Dangerous keyword blocklist**: Actions targeting elements with words like "purchase", "delete", "pay", "uninstall", "reset", etc. are automatically blocked and logged as `[BLOCKED]`
-- **App exclusions**: Users can block specific apps from being automated via Safety Settings
-- **Confidence threshold**: Actions are only replayed if they've been observed 3+ times on that exact screen layout
-- **Cooldown**: Minimum 800ms between consecutive actions to prevent rapid-fire mistakes
-- **Stale node protection**: The UI tree is snapshotted synchronously before any async processing, and action execution fetches a fresh root node with try/catch wrapping
 
 ---
 
@@ -116,33 +135,32 @@ The assistant includes multiple safety layers:
 
 ### First Launch
 1. Open the app
-2. Tap **Open Accessibility Settings**
-3. Find "AI Assistant" and enable the service
-4. Grant overlay permission when prompted
-5. Start in **Observe Mode** — use your phone normally and let the assistant learn
-6. Switch to **Assist Mode** when you want hands-free automation
+2. Tap **Open Accessibility Settings** and enable "AI Assistant"
+3. Grant overlay permission if you want the floating status bubble
+4. Leave it in **Observe Mode** — use your phone normally for a day or two
+5. Switch to **Assist Mode** when you're ready for hands-free automation
 
 ---
 
 ## Permissions
 
-| Permission | Reason |
-|------------|--------|
-| `BIND_ACCESSIBILITY_SERVICE` | Core functionality — observing and interacting with the UI |
-| `SYSTEM_ALERT_WINDOW` | Floating overlay bubble showing real-time status |
-| `FOREGROUND_SERVICE` | Keeps the overlay service alive |
+| Permission | What it does |
+|------------|-------------|
+| `BIND_ACCESSIBILITY_SERVICE` | Observes and interacts with UI across apps |
+| `SYSTEM_ALERT_WINDOW` | Shows the floating status overlay |
+| `FOREGROUND_SERVICE` | Keeps the overlay service running |
+| `MODIFY_AUDIO_SETTINGS` | Adjusts volume when replaying learned system patterns |
+
+Optional: `WRITE_SETTINGS` (for brightness/rotation control) — the app prompts for this and works without it.
 
 ---
 
-## Data Storage
+## Privacy
 
-All data is stored locally on-device using Room (SQLite):
-
-- **UserPatternEntity**: Learned behavior patterns with state, action text, type, frequency count, and last-seen timestamp
-- **RuleEntity**: User-configurable keyword rules with action type and enabled flag
-- **LogEntity**: Full action history with timestamps, package names, action details, and success/failure
-
-No data leaves the device.
+- All data is stored locally in a Room (SQLite) database on-device
+- No network requests, no analytics, no telemetry
+- No data leaves your phone, ever
+- You can view and delete all learned patterns from within the app
 
 ---
 

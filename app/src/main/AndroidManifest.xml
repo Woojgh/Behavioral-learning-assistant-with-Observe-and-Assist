@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <application
         android:allowBackup="true"
@@ -21,11 +23,16 @@
         <activity android:name=".RulesActivity" />
         <activity android:name=".LogActivity" />
         <activity android:name=".SafetyActivity" />
+        <activity android:name=".PatternsActivity" />
 
         <service
             android:name=".OverlayService"
             android:exported="false"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Displays a small floating status overlay while the AI assistant is active" />
+        </service>
 
         <service
             android:name=".AutoAccessibilityService"
