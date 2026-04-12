@@ -162,22 +162,53 @@ class PatternsActivity : Activity() {
                 val app = appNames[groupPos]
                 val count = groupedPatterns[app]?.size ?: 0
                 val appLabel = simplifyPackageName(app)
+                val isExcluded = !SafetyChecker.isAppAllowed(this@PatternsActivity, app)
 
-                return LinearLayout(this@PatternsActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(48, 20, 16, 20)
-
-                    addView(TextView(this@PatternsActivity).apply {
-                        text = appLabel
-                        textSize = 17f
-                        setTypeface(null, Typeface.BOLD)
-                    })
-                    addView(TextView(this@PatternsActivity).apply {
-                        text = "$count pattern(s)  •  ${if (isExpanded) "▲" else "▼"}"
-                        textSize = 12f
-                        setTextColor(0xFF888888.toInt())
-                    })
+                val outer = LinearLayout(this@PatternsActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(48, 16, 16, 16)
                 }
+
+                // App info column
+                val info = LinearLayout(this@PatternsActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+                    )
+                }
+                info.addView(TextView(this@PatternsActivity).apply {
+                    text = appLabel
+                    textSize = 17f
+                    setTypeface(null, Typeface.BOLD)
+                })
+                info.addView(TextView(this@PatternsActivity).apply {
+                    text = buildString {
+                        append("$count pattern(s)")
+                        if (isExcluded) append("  •  BLOCKED")
+                        append("  •  ${if (isExpanded) "▲" else "▼"}")
+                    }
+                    textSize = 12f
+                    setTextColor(if (isExcluded) 0xFFE53935.toInt() else 0xFF888888.toInt())
+                })
+                outer.addView(info)
+
+                // Block/Allow button
+                outer.addView(Button(this@PatternsActivity).apply {
+                    text = if (isExcluded) "Allow" else "Block"
+                    textSize = 12f
+                    setPadding(16, 4, 16, 4)
+                    setOnClickListener {
+                        if (isExcluded) {
+                            SafetyChecker.removeExcludedApp(this@PatternsActivity, app)
+                        } else {
+                            SafetyChecker.addExcludedApp(this@PatternsActivity, app)
+                        }
+                        refreshList()
+                    }
+                })
+
+                return outer
             }
 
             override fun getChildView(
