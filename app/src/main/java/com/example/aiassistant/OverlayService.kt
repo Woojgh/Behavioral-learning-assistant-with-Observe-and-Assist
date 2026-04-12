@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -264,11 +265,33 @@ class OverlayService : Service() {
         }
         panel.addView(modeRow, fullWidthWrap().apply { bottomMargin = dp(10) })
 
-        // -- Accessibility Settings --
-        panel.addView(actionButton("Accessibility Settings") {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            })
+        // -- Service status + toggle --
+        // Android doesn't allow programmatic enable/disable of accessibility services;
+        // the best we can do is show connection state and deep-link to the exact service
+        // page in Settings so the user can flip the toggle themselves in one tap.
+        panel.addView(sectionLabel("Accessibility Service", bottomPad = dp(4)))
+        val svcConnected = AutoAccessibilityService.instance != null
+        panel.addView(TextView(this).apply {
+            text = if (svcConnected) "● Connected" else "● Disconnected"
+            textSize = 12f
+            setTextColor(
+                if (svcConnected) Color.argb(230, 80, 210, 130)
+                else Color.argb(230, 220, 80, 80)
+            )
+            setPadding(0, 0, 0, dp(6))
+        }, fullWidthWrap())
+        val svcBtnLabel = if (svcConnected) "Disable Service →" else "Enable Service →"
+        panel.addView(actionButton(svcBtnLabel) {
+            // Deep-link directly to this service's toggle in accessibility settings
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            val bundle = Bundle()
+            bundle.putString(
+                ":settings:fragment_args_key",
+                "$packageName/${AutoAccessibilityService::class.java.name}"
+            )
+            intent.putExtra(":settings:show_fragment_args", bundle)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
             dismissPanel()
         })
 
