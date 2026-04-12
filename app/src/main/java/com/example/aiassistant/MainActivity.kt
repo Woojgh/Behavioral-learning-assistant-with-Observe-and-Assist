@@ -125,6 +125,14 @@ class MainActivity : Activity() {
             }
         }, buttonParams())
 
+        // --- View Patterns ---
+        layout.addView(Button(this).apply {
+            text = "View Patterns"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, PatternsActivity::class.java))
+            }
+        }, buttonParams())
+
         scroll.addView(layout)
         setContentView(scroll)
     }

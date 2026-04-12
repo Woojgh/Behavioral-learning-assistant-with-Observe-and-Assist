@@ -94,6 +94,15 @@ interface UserPatternDao {
 
     @Query("SELECT COUNT(DISTINCT packageName) FROM UserPatternEntity")
     suspend fun distinctApps(): Int
+
+    @Query("SELECT * FROM UserPatternEntity ORDER BY packageName ASC, count DESC")
+    suspend fun getAll(): List<UserPatternEntity>
+
+    @Delete
+    suspend fun delete(pattern: UserPatternEntity)
+
+    @Query("DELETE FROM UserPatternEntity")
+    suspend fun deleteAll()
 }
 
 // --- Database ---

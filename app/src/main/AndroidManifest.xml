@@ -21,6 +21,7 @@
         <activity android:name=".RulesActivity" />
         <activity android:name=".LogActivity" />
         <activity android:name=".SafetyActivity" />
+        <activity android:name=".PatternsActivity" />
 
         <service
             android:name=".OverlayService"
