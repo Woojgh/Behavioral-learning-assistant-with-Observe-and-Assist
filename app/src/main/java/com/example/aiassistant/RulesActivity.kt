@@ -15,6 +15,12 @@ class RulesActivity : AppCompatActivity() {
     private lateinit var listView: ListView
     private var rules = mutableListOf<RuleEntity>()
 
+    private data class RowViews(
+        val ruleText: TextView,
+        val toggleButton: Button,
+        val deleteButton: Button
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -129,31 +135,36 @@ class RulesActivity : AppCompatActivity() {
 
             override fun getView(pos: Int, convertView: View?, parent: ViewGroup?): View {
                 val rule = rules[pos]
-                val row = LinearLayout(this@RulesActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    setPadding(8, 12, 8, 12)
-                    gravity = Gravity.CENTER_VERTICAL
+                val row = if (convertView == null) {
+                    val layout = LinearLayout(this@RulesActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        setPadding(8, 12, 8, 12)
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
+                    val label = TextView(this@RulesActivity).apply {
+                        textSize = 16f
+                        layoutParams = LinearLayout.LayoutParams(
+                            0,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            1f
+                        )
+                    }
+                    val toggle = Button(this@RulesActivity)
+                    val delete = Button(this@RulesActivity).apply { text = "X" }
+                    layout.addView(label)
+                    layout.addView(toggle)
+                    layout.addView(delete)
+                    layout.tag = RowViews(label, toggle, delete)
+                    layout
+                } else {
+                    convertView
                 }
-
-                row.addView(TextView(this@RulesActivity).apply {
-                    text = "${rule.keyword}  →  ${rule.actionType}"
-                    textSize = 16f
-                    alpha = if (rule.enabled) 1f else 0.4f
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                })
-
-                // Enable / disable toggle
-                row.addView(Button(this@RulesActivity).apply {
-                    text = if (rule.enabled) "ON" else "OFF"
-                    setOnClickListener { toggleRule(rule) }
-                })
-
-                // Delete button
-                row.addView(Button(this@RulesActivity).apply {
-                    text = "X"
-                    setOnClickListener { deleteRule(rule) }
-                })
-
+                val views = row.tag as RowViews
+                views.ruleText.text = "${rule.keyword}  →  ${rule.actionType}"
+                views.ruleText.alpha = if (rule.enabled) 1f else 0.4f
+                views.toggleButton.text = if (rule.enabled) "ON" else "OFF"
+                views.toggleButton.setOnClickListener { toggleRule(rule) }
+                views.deleteButton.setOnClickListener { deleteRule(rule) }
                 return row
             }
         }

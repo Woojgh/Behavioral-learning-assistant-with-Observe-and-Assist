@@ -22,6 +22,11 @@ class LogActivity : AppCompatActivity() {
     private lateinit var listView: ListView
     private var logs = listOf<LogEntity>()
 
+    private data class RowViews(
+        val title: TextView,
+        val subtitle: TextView
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -102,26 +107,33 @@ class LogActivity : AppCompatActivity() {
 
             override fun getView(pos: Int, convertView: View?, parent: ViewGroup?): View {
                 val log = logs[pos]
-                val layout = LinearLayout(this@LogActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(8, 12, 8, 12)
+                val row = if (convertView == null) {
+                    val layout = LinearLayout(this@LogActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(8, 12, 8, 12)
+                    }
+                    val title = TextView(this@LogActivity).apply {
+                        textSize = 15f
+                    }
+                    val subtitle = TextView(this@LogActivity).apply {
+                        textSize = 12f
+                        setTextColor(0xFF888888.toInt())
+                    }
+                    layout.addView(title)
+                    layout.addView(subtitle)
+                    layout.tag = RowViews(title, subtitle)
+                    layout
+                } else {
+                    convertView
                 }
+                val views = row.tag as RowViews
 
                 val status = if (log.success) "✓" else "✗"
                 val time = dateFormat.format(Date(log.timestamp))
 
-                layout.addView(TextView(this@LogActivity).apply {
-                    text = "$status  ${log.actionType}: ${log.actionDetail}"
-                    textSize = 15f
-                })
-
-                layout.addView(TextView(this@LogActivity).apply {
-                    text = "$time  |  ${log.packageName}"
-                    textSize = 12f
-                    setTextColor(0xFF888888.toInt())
-                })
-
-                return layout
+                views.title.text = "$status  ${log.actionType}: ${log.actionDetail}"
+                views.subtitle.text = "$time  |  ${log.packageName}"
+                return row
             }
         }
     }

@@ -41,8 +41,17 @@ object SafetyChecker {
      * Returns true if the action target does NOT contain any blocked keywords.
      */
     fun isActionSafe(command: ActionCommand): Boolean {
-        val lower = command.target.lowercase()
-        return blockedKeywords.none { lower.contains(it) }
+        return !containsDangerousText(command.target)
+    }
+
+    internal fun containsDangerousText(target: String): Boolean {
+        val normalized = target.lowercase().trim()
+        if (normalized.isEmpty()) return false
+
+        return blockedKeywords.any { keyword ->
+            val regex = Regex("\\b${Regex.escape(keyword)}\\b")
+            regex.containsMatchIn(normalized)
+        }
     }
 
     /**

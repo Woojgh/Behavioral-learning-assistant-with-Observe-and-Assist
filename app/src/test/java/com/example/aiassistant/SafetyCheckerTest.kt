@@ -64,6 +64,17 @@ class SafetyCheckerTest {
         assertFalse(SafetyChecker.isActionSafe(ActionCommand(ActionType.CLICK, "Uninstall app")))
     }
 
+    @Test
+    fun containsDangerousText_wordBoundaryAvoidsFalsePositive() {
+        // "Repayment" should not trip the exact-word "pay" keyword.
+        assertFalse(SafetyChecker.containsDangerousText("Repayment schedule"))
+    }
+
+    @Test
+    fun containsDangerousText_phraseWithPunctuation_isDetected() {
+        assertTrue(SafetyChecker.containsDangerousText("Proceed to checkout!"))
+    }
+
     // -------------------------------------------------------------------------
     // cooldown
     // -------------------------------------------------------------------------

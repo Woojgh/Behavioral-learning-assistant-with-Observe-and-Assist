@@ -73,7 +73,7 @@ object ScreenReactor {
      * Check that at least half of the learned keywords are present on the current screen.
      * This handles minor screen changes while still requiring meaningful context match.
      */
-    private fun keywordsMatch(storedKeywords: String, screenText: List<String>): Boolean {
+    internal fun keywordsMatch(storedKeywords: String, screenText: List<String>): Boolean {
         val keywords = storedKeywords.split(",").filter { it.isNotBlank() }
         if (keywords.isEmpty()) return false
 
