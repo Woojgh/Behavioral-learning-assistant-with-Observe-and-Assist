@@ -12,12 +12,12 @@ object Logger {
 
     // Log pattern matches
     fun logPatternMatch(pattern: String, data: String) {
-        Log.i(TAG, "Pattern matched: \$pattern, data: \$data")
+        Log.i(TAG, "Pattern matched: $pattern, data: $data")
     }
 
     // Log safety violations
     fun logSafetyViolation(violation: String) {
-        Log.w(TAG, "Safety violation: \$violation")
+        Log.w(TAG, "Safety violation: $violation")
     }
 
     // Log debug information

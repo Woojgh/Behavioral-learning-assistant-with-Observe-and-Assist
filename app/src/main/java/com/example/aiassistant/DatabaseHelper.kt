@@ -2,6 +2,8 @@ package com.example.aiassistant
 
 import android.content.Context
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 // --- Entities ---
 
@@ -25,7 +27,10 @@ data class RuleEntity(
 )
 
 @Entity(
-    indices = [Index(value = ["state", "actionText"], unique = true)]
+    indices = [
+        Index(value = ["state", "actionText"], unique = true),
+        Index(value = ["state", "count"])
+    ]
 )
 data class UserPatternEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
@@ -38,7 +43,10 @@ data class UserPatternEntity(
 )
 
 @Entity(
-    indices = [Index(value = ["screenState", "settingName", "newValue"], unique = true)]
+    indices = [
+        Index(value = ["screenState", "settingName", "newValue"], unique = true),
+        Index(value = ["screenState", "count"])
+    ]
 )
 data class SystemPatternEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
@@ -155,7 +163,7 @@ interface SystemPatternDao {
 
 @Database(
     entities = [LogEntity::class, RuleEntity::class, UserPatternEntity::class, SystemPatternEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true  // Schema files written to app/schemas/ for migration tracking.
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -168,6 +176,18 @@ abstract class AppDatabase : RoomDatabase() {
 // --- Helper ---
 
 object DatabaseHelper {
+    private val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_UserPatternEntity_state_count " +
+                        "ON UserPatternEntity(state, count)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_SystemPatternEntity_screenState_count " +
+                        "ON SystemPatternEntity(screenState, count)"
+            )
+        }
+    }
 
     /**
      * @Volatile ensures the cached instance is always read from main memory,
@@ -185,9 +205,8 @@ object DatabaseHelper {
                 AppDatabase::class.java,
                 "ai_db"
             )
-            // TODO: Replace fallbackToDestructiveMigration() with explicit Migration
-            // objects as schema versions increase, to prevent user data loss on upgrade.
-            .fallbackToDestructiveMigration()
+            .addMigrations(MIGRATION_4_5)
+            .fallbackToDestructiveMigrationOnDowngrade()
             .build()
             .also { db = it }
         }
