@@ -1,6 +1,7 @@
 package com.example.aiassistant
 
 import android.content.Context
+import java.util.concurrent.atomic.AtomicLong
 
 object SafetyChecker {
 
@@ -8,7 +9,11 @@ object SafetyChecker {
     private const val KEY_EXCLUDED_APPS = "excluded_apps"
     private const val COOLDOWN_MS = 800L
 
-    private var lastActionTime = 0L
+    /**
+     * AtomicLong ensures lock-free, thread-safe read/write from multiple coroutines
+     * without the overhead of synchronized blocks.
+     */
+    private val lastActionTime = AtomicLong(0L)
 
     /**
      * Dangerous keywords — never auto-click elements containing these.
@@ -25,12 +30,11 @@ object SafetyChecker {
      * Returns true if enough time has passed since the last action.
      */
     fun checkCooldown(): Boolean {
-        val now = System.currentTimeMillis()
-        return (now - lastActionTime) >= COOLDOWN_MS
+        return (System.currentTimeMillis() - lastActionTime.get()) >= COOLDOWN_MS
     }
 
     fun recordActionTime() {
-        lastActionTime = System.currentTimeMillis()
+        lastActionTime.set(System.currentTimeMillis())
     }
 
     /**

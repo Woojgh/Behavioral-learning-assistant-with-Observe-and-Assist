@@ -1,14 +1,15 @@
 package com.example.aiassistant
 
-import android.app.Activity
 import android.os.Bundle
 import android.view.Gravity
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.*
 
-class SafetyActivity : Activity() {
+class SafetyActivity : AppCompatActivity() {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var listView: ListView
@@ -71,20 +72,25 @@ class SafetyActivity : Activity() {
         ))
 
         setContentView(root)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
         loadData()
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == android.R.id.home) { finish(); return true }
+        return super.onOptionsItemSelected(item)
     }
 
     private fun loadData() {
         excludedApps = SafetyChecker.getExcludedApps(this).toMutableSet()
 
         scope.launch {
-            // Get distinct packages from observed patterns
-            val patterns = withContext(Dispatchers.IO) {
-                DatabaseHelper.getDB(this@SafetyActivity).logDao().getAll()
+            // Use a targeted DISTINCT query instead of loading all log rows.
+            val pkgs = withContext(Dispatchers.IO) {
+                DatabaseHelper.getDB(this@SafetyActivity).logDao().getDistinctPackages()
             }
-            val pkgs = patterns.map { it.packageName }.distinct().sorted()
 
-            // Merge with excluded apps that may not be in logs
+            // Merge with excluded apps that may not appear in logs yet.
             val allApps = (pkgs + excludedApps).distinct().sorted()
             observedApps = allApps
             refreshList()

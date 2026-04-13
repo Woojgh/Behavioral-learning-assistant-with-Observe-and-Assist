@@ -65,6 +65,10 @@ interface LogDao {
     @Query("SELECT * FROM LogEntity ORDER BY timestamp DESC LIMIT :limit")
     suspend fun getRecent(limit: Int): List<LogEntity>
 
+    /** Efficient query — avoids loading all rows just to extract package names. */
+    @Query("SELECT DISTINCT packageName FROM LogEntity ORDER BY packageName ASC")
+    suspend fun getDistinctPackages(): List<String>
+
     @Query("DELETE FROM LogEntity")
     suspend fun clearAll()
 }
@@ -73,6 +77,9 @@ interface LogDao {
 interface RuleDao {
     @Insert
     suspend fun insert(rule: RuleEntity)
+
+    @Update
+    suspend fun update(rule: RuleEntity)
 
     @Delete
     suspend fun delete(rule: RuleEntity)
@@ -149,7 +156,7 @@ interface SystemPatternDao {
 @Database(
     entities = [LogEntity::class, RuleEntity::class, UserPatternEntity::class, SystemPatternEntity::class],
     version = 4,
-    exportSchema = false
+    exportSchema = true  // Schema files written to app/schemas/ for migration tracking.
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun logDao(): LogDao
@@ -162,14 +169,28 @@ abstract class AppDatabase : RoomDatabase() {
 
 object DatabaseHelper {
 
+    /**
+     * @Volatile ensures the cached instance is always read from main memory,
+     * preventing a second thread from seeing a partially-constructed object.
+     * The synchronized block inside getDB() prevents a race where two threads
+     * both see null and each try to create a new database instance.
+     */
+    @Volatile
     private var db: AppDatabase? = null
 
     fun getDB(context: Context): AppDatabase {
-        return db ?: Room.databaseBuilder(
-            context.applicationContext,
-            AppDatabase::class.java,
-            "ai_db"
-        ).fallbackToDestructiveMigration().build().also { db = it }
+        return db ?: synchronized(this) {
+            db ?: Room.databaseBuilder(
+                context.applicationContext,
+                AppDatabase::class.java,
+                "ai_db"
+            )
+            // TODO: Replace fallbackToDestructiveMigration() with explicit Migration
+            // objects as schema versions increase, to prevent user data loss on upgrade.
+            .fallbackToDestructiveMigration()
+            .build()
+            .also { db = it }
+        }
     }
 
     suspend fun logAction(

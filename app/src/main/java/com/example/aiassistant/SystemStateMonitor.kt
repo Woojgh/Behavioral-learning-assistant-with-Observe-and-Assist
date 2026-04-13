@@ -88,7 +88,9 @@ class SystemStateMonitor(private val context: Context) {
                                 )
                             )
                         }
-                    } catch (_: Exception) { }
+                    } catch (e: Exception) {
+                        Logger.logError("SystemStateMonitor failed to record pattern: ${e.message}")
+                    }
                 }
             }
         }

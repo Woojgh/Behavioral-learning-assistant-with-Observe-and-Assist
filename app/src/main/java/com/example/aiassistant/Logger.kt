@@ -1,3 +1,5 @@
+package com.example.aiassistant
+
 import android.util.Log
 
 object Logger {

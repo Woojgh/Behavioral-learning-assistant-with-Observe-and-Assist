@@ -40,14 +40,17 @@ object PatternMatcher {
         // Only act on high-confidence patterns
         if (top.count < MIN_CONFIDENCE) return null
 
-        // Verify the target text still exists on the current screen
-        val targetExists = snapshot.textElements.any {
-            it.equals(top.actionText, ignoreCase = true)
-        }
-        if (!targetExists) return null
+        // Verify the target text still exists on the current screen.
+        // Fuzzy matching (Jaro-Winkler ≥ 0.85) handles minor dynamic text changes
+        // (e.g. "Allow" vs "Allow Once") without breaking screen recognition.
+        val matchedTarget = snapshot.textElements.firstOrNull { element ->
+            element.equals(top.actionText, ignoreCase = true) ||
+            StringSimilarity.isSimilar(element, top.actionText)
+        } ?: return null
 
         val type = parseActionType(top.actionType)
-        return ActionCommand(type = type, target = top.actionText)
+        // Use the live element text (not the stored text) so the click target is accurate.
+        return ActionCommand(type = type, target = matchedTarget)
     }
 
     private suspend fun findFromRules(

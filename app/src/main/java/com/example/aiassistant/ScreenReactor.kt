@@ -1,6 +1,7 @@
 package com.example.aiassistant
 
 import android.content.Context
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * On each screen change, checks if any learned system-setting patterns
@@ -11,6 +12,13 @@ object ScreenReactor {
 
     /** Minimum observations before auto-applying a system change. */
     private const val MIN_CONFIDENCE = 3
+
+    /**
+     * Minimum ms between any two automatic system-setting changes.
+     * Prevents rapid-fire volume/brightness flickers on screens with many patterns.
+     */
+    private const val SYSTEM_COOLDOWN_MS = 2_000L
+    private val lastSystemActionTime = AtomicLong(0L)
 
     /**
      * Check the current screen against learned system patterns.
@@ -36,6 +44,11 @@ object ScreenReactor {
 
             // Verify the keywords that were present during learning are still on screen
             if (!keywordsMatch(pattern.matchedKeywords, snapshot.textElements)) continue
+
+            // Rate-limit system changes to prevent flickering.
+            val now = System.currentTimeMillis()
+            if (now - lastSystemActionTime.get() < SYSTEM_COOLDOWN_MS) continue
+            lastSystemActionTime.set(now)
 
             // Apply the system change
             val success = SystemActionExecutor.apply(context, pattern.settingName, pattern.newValue)

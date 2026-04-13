@@ -64,15 +64,25 @@ object ActionExecutor {
 
     fun performSwipe(
         service: AccessibilityService,
-        startX: Float = 540f,
-        startY: Float = 1500f,
-        endX: Float = 540f,
-        endY: Float = 500f,
+        startX: Float = -1f,
+        startY: Float = -1f,
+        endX: Float = -1f,
+        endY: Float = -1f,
         durationMs: Long = 300
     ): Boolean {
+        // Compute screen-relative defaults so the swipe works on any resolution.
+        // Negative sentinel values mean "use default"; explicit callers can override.
+        val dm = service.resources.displayMetrics
+        val w = dm.widthPixels.toFloat()
+        val h = dm.heightPixels.toFloat()
+        val sx = if (startX >= 0) startX else w / 2f
+        val sy = if (startY >= 0) startY else h * 0.75f
+        val ex = if (endX >= 0) endX else w / 2f
+        val ey = if (endY >= 0) endY else h * 0.25f
+
         val path = Path().apply {
-            moveTo(startX, startY)
-            lineTo(endX, endY)
+            moveTo(sx, sy)
+            lineTo(ex, ey)
         }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs))

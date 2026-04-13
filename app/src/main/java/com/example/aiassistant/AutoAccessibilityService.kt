@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.view.accessibility.AccessibilityEvent
 import kotlinx.coroutines.*
+import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicBoolean
 
 enum class AgentMode { OFF, OBSERVE, ASSIST }
@@ -11,7 +12,15 @@ enum class AgentMode { OFF, OBSERVE, ASSIST }
 class AutoAccessibilityService : AccessibilityService() {
 
     companion object {
-        var instance: AutoAccessibilityService? = null
+        /**
+         * WeakReference prevents a memory leak if the service is destroyed but something
+         * still holds a reference to this companion object. External callers treat
+         * `instance` as a regular nullable — no API change required.
+         */
+        private var _instanceRef: WeakReference<AutoAccessibilityService>? = null
+        val instance: AutoAccessibilityService?
+            get() = _instanceRef?.get()
+
         private const val PREFS = "ai_assistant_prefs"
         private const val KEY_MODE = "agent_mode"
 
@@ -53,7 +62,7 @@ class AutoAccessibilityService : AccessibilityService() {
     private val snapshotCooldownMs = 500L
 
     override fun onServiceConnected() {
-        instance = this
+        _instanceRef = WeakReference(this)
         // Load cached mode from prefs once at startup
         getMode(this)
         // Start monitoring system setting changes
@@ -95,7 +104,8 @@ class AutoAccessibilityService : AccessibilityService() {
                             currentState = state,
                             packageName = pkg
                         )
-                    } catch (_: Exception) {
+                    } catch (e: Exception) {
+                        Logger.logError("Observer.onUserActionDirect failed: ${e.message}")
                     } finally {
                         observeBusy.set(false)
                     }
@@ -133,7 +143,9 @@ class AutoAccessibilityService : AccessibilityService() {
             scope.launch {
                 try {
                     ScreenReactor.checkAndReact(this@AutoAccessibilityService, snapshot, mode)
-                } catch (_: Exception) { }
+                } catch (e: Exception) {
+                    Logger.logError("ScreenReactor.checkAndReact failed: ${e.message}")
+                }
             }
 
             // Only run assist engine in ASSIST mode
@@ -145,7 +157,8 @@ class AutoAccessibilityService : AccessibilityService() {
                             context = this@AutoAccessibilityService,
                             snapshot = snapshot
                         )
-                    } catch (_: Exception) {
+                    } catch (e: Exception) {
+                        Logger.logError("AssistEngine.handleScreen failed: ${e.message}")
                     } finally {
                         assistBusy.set(false)
                     }
@@ -175,7 +188,7 @@ class AutoAccessibilityService : AccessibilityService() {
         systemStateMonitor?.stop()
         systemStateMonitor = null
         lastSnapshot = null
-        instance = null
+        _instanceRef = null
         scope.cancel()
     }
 }
