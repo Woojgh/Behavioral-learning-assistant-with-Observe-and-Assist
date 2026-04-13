@@ -1,16 +1,22 @@
 package com.example.aiassistant
 
-import android.app.Activity
 import android.os.Bundle
 import android.view.Gravity
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
 import java.util.*
 
-class LogActivity : Activity() {
+class LogActivity : AppCompatActivity() {
+
+    companion object {
+        /** Cap to avoid loading an unbounded number of rows into memory. */
+        private const val LOG_PAGE_SIZE = 200
+    }
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var listView: ListView
@@ -52,13 +58,20 @@ class LogActivity : Activity() {
         ))
 
         setContentView(root)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
         loadLogs()
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == android.R.id.home) { finish(); return true }
+        return super.onOptionsItemSelected(item)
     }
 
     private fun loadLogs() {
         scope.launch {
             logs = withContext(Dispatchers.IO) {
-                DatabaseHelper.getDB(this@LogActivity).logDao().getAll()
+                // Limit to most-recent LOG_PAGE_SIZE entries to avoid OOM on heavily-used devices.
+                DatabaseHelper.getDB(this@LogActivity).logDao().getRecent(LOG_PAGE_SIZE)
             }
             refreshList()
         }

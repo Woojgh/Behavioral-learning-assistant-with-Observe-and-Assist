@@ -1,14 +1,15 @@
 package com.example.aiassistant
 
-import android.app.Activity
 import android.os.Bundle
 import android.view.Gravity
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.*
 
-class RulesActivity : Activity() {
+class RulesActivity : AppCompatActivity() {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var listView: ListView
@@ -74,7 +75,13 @@ class RulesActivity : Activity() {
         ))
 
         setContentView(root)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
         loadRules()
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == android.R.id.home) { finish(); return true }
+        return super.onOptionsItemSelected(item)
     }
 
     private fun loadRules() {
@@ -90,6 +97,16 @@ class RulesActivity : Activity() {
             val rule = RuleEntity(keyword = keyword, actionType = actionType)
             withContext(Dispatchers.IO) {
                 DatabaseHelper.getDB(this@RulesActivity).ruleDao().insert(rule)
+            }
+            loadRules()
+        }
+    }
+
+    private fun toggleRule(rule: RuleEntity) {
+        scope.launch {
+            val updated = rule.copy(enabled = !rule.enabled)
+            withContext(Dispatchers.IO) {
+                DatabaseHelper.getDB(this@RulesActivity).ruleDao().update(updated)
             }
             loadRules()
         }
@@ -121,9 +138,17 @@ class RulesActivity : Activity() {
                 row.addView(TextView(this@RulesActivity).apply {
                     text = "${rule.keyword}  →  ${rule.actionType}"
                     textSize = 16f
+                    alpha = if (rule.enabled) 1f else 0.4f
                     layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 })
 
+                // Enable / disable toggle
+                row.addView(Button(this@RulesActivity).apply {
+                    text = if (rule.enabled) "ON" else "OFF"
+                    setOnClickListener { toggleRule(rule) }
+                })
+
+                // Delete button
                 row.addView(Button(this@RulesActivity).apply {
                     text = "X"
                     setOnClickListener { deleteRule(rule) }

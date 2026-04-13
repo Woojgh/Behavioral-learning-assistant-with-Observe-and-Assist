@@ -1,6 +1,5 @@
 package com.example.aiassistant
 
-import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -11,9 +10,10 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.*
 
-class MainActivity : Activity() {
+class MainActivity : AppCompatActivity() {
 
     private lateinit var statusText: TextView
     private lateinit var statsText: TextView
@@ -133,6 +133,14 @@ class MainActivity : Activity() {
             }
         }, buttonParams())
 
+        // --- System Patterns ---
+        layout.addView(Button(this).apply {
+            text = "System Patterns"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, SystemPatternsActivity::class.java))
+            }
+        }, buttonParams())
+
         scroll.addView(layout)
         setContentView(scroll)
     }
@@ -169,16 +177,14 @@ class MainActivity : Activity() {
         }
     }
 
-    private var overlayRunning = false
-
     private fun toggleOverlay() {
         val intent = Intent(this, OverlayService::class.java)
-        if (overlayRunning) {
+        // Derive running state from the live service instance rather than a
+        // local boolean that resets on Activity recreation.
+        if (OverlayService.instance != null) {
             stopService(intent)
-            overlayRunning = false
         } else {
             startForegroundService(intent)
-            overlayRunning = true
         }
     }
 

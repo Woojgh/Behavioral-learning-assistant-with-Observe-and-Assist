@@ -1,14 +1,15 @@
 package com.example.aiassistant
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
 import android.graphics.Color
 import android.graphics.Typeface
 import android.view.Gravity
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -17,7 +18,7 @@ import java.util.*
  * Shows learned patterns grouped by app, with expandable sections
  * and separated detail lines for each pattern.
  */
-class PatternsActivity : Activity() {
+class PatternsActivity : AppCompatActivity() {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var expandableList: ExpandableListView
@@ -73,7 +74,13 @@ class PatternsActivity : Activity() {
         )
 
         setContentView(root)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
         loadPatterns()
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == android.R.id.home) { finish(); return true }
+        return super.onOptionsItemSelected(item)
     }
 
     private fun loadPatterns() {
