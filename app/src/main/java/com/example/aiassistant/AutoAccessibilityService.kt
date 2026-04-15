@@ -81,10 +81,11 @@ class AutoAccessibilityService : AccessibilityService() {
             currentPackage = event.packageName?.toString()
         }
 
-        // --- OBSERVATION: record user-initiated actions (always, in both modes) ---
-        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
+        // --- OBSERVATION: record user-initiated actions (OBSERVE mode only) ---
+        if (mode == AgentMode.OBSERVE && (
+            event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
             event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED ||
-            event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
+            event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED)
         ) {
             val pkg = currentPackage ?: return
             val state = lastScreenState ?: return

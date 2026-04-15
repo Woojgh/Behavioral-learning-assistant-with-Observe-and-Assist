@@ -5,7 +5,7 @@ import android.view.accessibility.AccessibilityEvent
 
 /**
  * Observes user-initiated actions and records them as patterns.
- * This runs in both OBSERVE and ASSIST modes — always learning.
+ * This runs only in OBSERVE mode — learning is disabled during ASSIST.
  */
 object Observer {
 

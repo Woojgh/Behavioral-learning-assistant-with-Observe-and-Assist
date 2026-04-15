@@ -2,8 +2,14 @@ package com.example.aiassistant
 
 import android.app.*
 import android.content.Intent
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PixelFormat
+import android.graphics.RectF
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -160,13 +166,14 @@ class OverlayService : Service() {
 
     private fun updateBubbleAppearance() {
         val mode = AutoAccessibilityService.cachedMode
+        val connected = AutoAccessibilityService.instance != null
         bubbleView?.apply {
             text = when (mode) {
                 AgentMode.OFF     -> "AI\nOFF"
                 AgentMode.OBSERVE -> "AI\nOBS"
                 AgentMode.ASSIST  -> "AI\nAST"
             }
-            setBackgroundColor(modeColor(mode))
+            background = createBubbleBackground(modeColor(mode), serviceColor(connected))
         }
     }
 
@@ -277,10 +284,7 @@ class OverlayService : Service() {
         val svcStatusTv = TextView(this).apply {
             text = if (svcConnected) "● Connected" else "● Disconnected"
             textSize = 12f
-            setTextColor(
-                if (svcConnected) Color.argb(230, 80, 210, 130)
-                else Color.argb(230, 220, 80, 80)
-            )
+            setTextColor(serviceColor(svcConnected))
             setPadding(0, 0, 0, dp(6))
         }
         panelServiceStatusTv = svcStatusTv
@@ -355,10 +359,7 @@ class OverlayService : Service() {
         val connected = AutoAccessibilityService.instance != null
         panelServiceStatusTv?.apply {
             text = if (connected) "\u25cf Connected" else "\u25cf Disconnected"
-            setTextColor(
-                if (connected) Color.argb(230, 80, 210, 130)
-                else Color.argb(230, 220, 80, 80)
-            )
+            setTextColor(serviceColor(connected))
         }
         panelServiceBtn?.text =
             if (connected) "Disable Service \u2192" else "Enable Service \u2192"
@@ -382,9 +383,64 @@ class OverlayService : Service() {
         AgentMode.OBSERVE -> Color.argb(215, 20, 90, 180)
         AgentMode.ASSIST  -> Color.argb(215, 20, 140, 60)
     }
+    private fun serviceColor(connected: Boolean): Int =
+        if (connected) Color.argb(230, 80, 210, 130) else Color.argb(230, 220, 80, 80)
+
+    private fun createBubbleBackground(modeColor: Int, statusColor: Int): Drawable =
+        SplitBottomColorDrawable(
+            topColor = modeColor,
+            bottomColor = statusColor,
+            bottomFraction = 0.20f,
+            cornerRadiusPx = dp(14).toFloat()
+        )
 
     private fun modeBtnColor(mode: AgentMode, active: Boolean): Int =
         if (active) modeColor(mode) else Color.argb(180, 50, 50, 50)
+
+    private class SplitBottomColorDrawable(
+        private val topColor: Int,
+        private val bottomColor: Int,
+        private val bottomFraction: Float,
+        private val cornerRadiusPx: Float
+    ) : Drawable() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val clipPath = Path()
+        private val rect = RectF()
+
+        override fun draw(canvas: Canvas) {
+            if (bounds.isEmpty) return
+
+            rect.set(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat())
+            clipPath.reset()
+            clipPath.addRoundRect(rect, cornerRadiusPx, cornerRadiusPx, Path.Direction.CW)
+
+            val clampedBottomFraction = bottomFraction.coerceIn(0f, 1f)
+            val splitY = rect.bottom - (rect.height() * clampedBottomFraction)
+
+            canvas.save()
+            canvas.clipPath(clipPath)
+
+            paint.color = topColor
+            canvas.drawRect(rect.left, rect.top, rect.right, splitY, paint)
+
+            paint.color = bottomColor
+            canvas.drawRect(rect.left, splitY, rect.right, rect.bottom, paint)
+
+            canvas.restore()
+        }
+
+        override fun setAlpha(alpha: Int) {
+            paint.alpha = alpha
+            invalidateSelf()
+        }
+
+        override fun setColorFilter(colorFilter: ColorFilter?) {
+            paint.colorFilter = colorFilter
+            invalidateSelf()
+        }
+
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+    }
 
     // -------------------------------------------------------------------------
     // View helpers
