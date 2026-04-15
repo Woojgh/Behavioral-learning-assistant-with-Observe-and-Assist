@@ -138,7 +138,11 @@ struct MainView: View {
     }
 }
 
-#Preview {
-    MainView()
+struct MainView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationStack {
+            MainView()
+        }
         .environment(\.managedObjectContext, PersistenceController.shared.viewContext)
+    }
 }

@@ -88,9 +88,11 @@ struct SafetyView: View {
     }
 }
 
-#Preview {
-    NavigationStack {
-        SafetyView()
+struct SafetyView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationStack {
+            SafetyView()
+        }
+        .environment(\.managedObjectContext, PersistenceController.shared.viewContext)
     }
-    .environment(\.managedObjectContext, PersistenceController.shared.viewContext)
 }

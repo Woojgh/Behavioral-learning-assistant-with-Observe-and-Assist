@@ -43,7 +43,7 @@ struct LogView: View {
         .listStyle(.plain)
         .navigationTitle("Action History")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Clear All") {
                     clearLogs()
                 }
@@ -69,10 +69,11 @@ struct LogView: View {
         return dateFormatter.string(from: date)
     }
 }
-
-#Preview {
-    NavigationStack {
-        LogView()
+struct LogView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationStack {
+            LogView()
+        }
+        .environment(\.managedObjectContext, PersistenceController.shared.viewContext)
     }
-    .environment(\.managedObjectContext, PersistenceController.shared.viewContext)
 }

@@ -75,9 +75,11 @@ struct RulesView: View {
     }
 }
 
-#Preview {
-    NavigationStack {
-        RulesView()
+struct RulesView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationStack {
+            RulesView()
+        }
+        .environment(\.managedObjectContext, PersistenceController.shared.viewContext)
     }
-    .environment(\.managedObjectContext, PersistenceController.shared.viewContext)
 }

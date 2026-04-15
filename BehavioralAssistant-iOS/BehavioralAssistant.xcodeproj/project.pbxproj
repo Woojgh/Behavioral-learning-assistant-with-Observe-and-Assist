@@ -7,27 +7,27 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A10000010000000000000001 /* BehavioralAssistantApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000001; };
-		A10000020000000000000002 /* ActionCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000020000000000000002; };
-		A10000030000000000000003 /* Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000030000000000000003; };
-		A10000040000000000000004 /* BehavioralAssistant.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = A20000040000000000000004; };
-		A10000050000000000000005 /* ScreenSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000050000000000000005; };
-		A10000060000000000000006 /* Observer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000060000000000000006; };
-		A10000070000000000000007 /* PatternMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000070000000000000007; };
-		A10000080000000000000008 /* SafetyChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000080000000000000008; };
-		A10000090000000000000009 /* AssistEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000090000000000000009; };
-		A1000010000000000000000A /* ActionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000010000000000000000A; };
-		A1000011000000000000000B /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000011000000000000000B; };
-		A1000012000000000000000C /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000012000000000000000C; };
-		A1000013000000000000000D /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000013000000000000000D; };
-		A1000014000000000000000E /* SafetyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000014000000000000000E; };
+		A10000010000000000000001 /* BehavioralAssistantApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000001 /* BehavioralAssistantApp.swift */; };
+		A10000020000000000000002 /* ActionCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000020000000000000002 /* ActionCommand.swift */; };
+		A10000030000000000000003 /* Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000030000000000000003 /* Persistence.swift */; };
+		A10000040000000000000004 /* BehavioralAssistant.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = A20000040000000000000004 /* BehavioralAssistant.xcdatamodeld */; };
+		A10000050000000000000005 /* ScreenSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000050000000000000005 /* ScreenSnapshot.swift */; };
+		A10000060000000000000006 /* Observer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000060000000000000006 /* Observer.swift */; };
+		A10000070000000000000007 /* PatternMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000070000000000000007 /* PatternMatcher.swift */; };
+		A10000080000000000000008 /* SafetyChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000080000000000000008 /* SafetyChecker.swift */; };
+		A10000090000000000000009 /* AssistEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000090000000000000009 /* AssistEngine.swift */; };
+		A1000010000000000000000A /* ActionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000010000000000000000A /* ActionExecutor.swift */; };
+		A1000011000000000000000B /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000011000000000000000B /* MainView.swift */; };
+		A1000012000000000000000C /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000012000000000000000C /* RulesView.swift */; };
+		A1000013000000000000000D /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000013000000000000000D /* LogView.swift */; };
+		A1000014000000000000000E /* SafetyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000014000000000000000E /* SafetyView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		A20000010000000000000001 /* BehavioralAssistantApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BehavioralAssistantApp.swift; sourceTree = "<group>"; };
 		A20000020000000000000002 /* ActionCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionCommand.swift; sourceTree = "<group>"; };
 		A20000030000000000000003 /* Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Persistence.swift; sourceTree = "<group>"; };
-		A20000040000000000000004 /* BehavioralAssistant.xcdatamodeld */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodeld; path = BehavioralAssistant.xcdatamodeld; sourceTree = "<group>"; };
+		A2000004A000000000000004 /* BehavioralAssistant.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = BehavioralAssistant.xcdatamodel; sourceTree = "<group>"; };
 		A20000050000000000000005 /* ScreenSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenSnapshot.swift; sourceTree = "<group>"; };
 		A20000060000000000000006 /* Observer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Observer.swift; sourceTree = "<group>"; };
 		A20000070000000000000007 /* PatternMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatternMatcher.swift; sourceTree = "<group>"; };
@@ -157,6 +157,9 @@
 				Base,
 			);
 			mainGroup = A50000010000000000000001;
+			packageReferences = (
+				917310D32F8ED2EA009C5DFD /* XCRemoteSwiftPackageReference "llama" */,
+			);
 			productRefGroup = A50000060000000000000006 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -395,6 +398,17 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		917310D32F8ED2EA009C5DFD /* XCRemoteSwiftPackageReference "llama" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mattt/llama.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCVersionGroup section */
 		A20000040000000000000004 /* BehavioralAssistant.xcdatamodeld */ = {
 			isa = XCVersionGroup;
@@ -406,14 +420,7 @@
 			sourceTree = "<group>";
 			versionGroupType = wrapper.xcdatamodel;
 		};
-		A2000004A000000000000004 /* BehavioralAssistant.xcdatamodel */ = {
-			isa = PBXFileReference;
-			lastKnownFileType = wrapper.xcdatamodel;
-			path = BehavioralAssistant.xcdatamodel;
-			sourceTree = "<group>";
-		};
 /* End XCVersionGroup section */
-
 	};
 	rootObject = A90000010000000000000001 /* Project object */;
 }
