@@ -41,6 +41,13 @@ class OverlayService : Service() {
         fun updateStatus(text: String) {
             instance?.postStatus(text)
         }
+
+        /** Called when the accessibility service connects or disconnects. */
+        fun refreshServiceState() {
+            instance?.mainHandler?.post {
+                instance?.refreshPanelContent()
+            }
+        }
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())

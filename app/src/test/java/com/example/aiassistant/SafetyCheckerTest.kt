@@ -65,14 +65,93 @@ class SafetyCheckerTest {
     }
 
     @Test
+    fun isActionSafe_confirmPaymentPhrase_returnsFalse() {
+        assertFalse(SafetyChecker.isActionSafe(ActionCommand(ActionType.CLICK, "Confirm payment")))
+    }
+
+    @Test
+    fun isActionSafe_placeOrderPhrase_returnsFalse() {
+        assertFalse(SafetyChecker.isActionSafe(ActionCommand(ActionType.CLICK, "Place order")))
+    }
+
+    @Test
+    fun isActionSafe_factoryResetPhrase_returnsFalse() {
+        assertFalse(SafetyChecker.isActionSafe(ActionCommand(ActionType.CLICK, "Factory reset")))
+    }
+
+    @Test
+    fun isActionSafe_wipeKeyword_returnsFalse() {
+        assertFalse(SafetyChecker.isActionSafe(ActionCommand(ActionType.CLICK, "Wipe device")))
+    }
+
+    @Test
+    fun isActionSafe_billingKeyword_returnsFalse() {
+        assertFalse(SafetyChecker.isActionSafe(ActionCommand(ActionType.CLICK, "Billing details")))
+    }
+
+    @Test
+    fun isActionSafe_emptyTarget_returnsTrue() {
+        // Empty targets are benign — no keywords to match.
+        assertTrue(SafetyChecker.isActionSafe(ActionCommand(ActionType.CLICK, "")))
+    }
+
+    @Test
+    fun isActionSafe_whitespaceTarget_returnsTrue() {
+        assertTrue(SafetyChecker.isActionSafe(ActionCommand(ActionType.CLICK, "   ")))
+    }
+
+    @Test
+    fun isActionSafe_scrollActionWithDangerousTarget_returnsFalse() {
+        // Any action type is subject to the same keyword filter.
+        assertFalse(
+            SafetyChecker.isActionSafe(ActionCommand(ActionType.SCROLL_FORWARD, "Delete all"))
+        )
+    }
+
+    @Test
     fun containsDangerousText_wordBoundaryAvoidsFalsePositive() {
         // "Repayment" should not trip the exact-word "pay" keyword.
         assertFalse(SafetyChecker.containsDangerousText("Repayment schedule"))
     }
 
     @Test
+    fun containsDangerousText_wordBoundaryAvoidsSubscriptionFalsePositive() {
+        // "Subscription" and "Subscriber" should not match the "subscribe" keyword.
+        assertFalse(SafetyChecker.containsDangerousText("Active subscription"))
+        assertFalse(SafetyChecker.containsDangerousText("Subscriber count"))
+    }
+
+    @Test
+    fun containsDangerousText_wordBoundaryAvoidsResetButton() {
+        // "Preset" and "Presets" should not match "reset".
+        assertFalse(SafetyChecker.containsDangerousText("Save preset"))
+        assertFalse(SafetyChecker.containsDangerousText("My presets"))
+    }
+
+    @Test
     fun containsDangerousText_phraseWithPunctuation_isDetected() {
         assertTrue(SafetyChecker.containsDangerousText("Proceed to checkout!"))
+    }
+
+    @Test
+    fun containsDangerousText_keywordFollowedByPunctuation_isDetected() {
+        assertTrue(SafetyChecker.containsDangerousText("Delete?"))
+        assertTrue(SafetyChecker.containsDangerousText("Buy."))
+    }
+
+    @Test
+    fun containsDangerousText_emptyString_returnsFalse() {
+        assertFalse(SafetyChecker.containsDangerousText(""))
+    }
+
+    @Test
+    fun containsDangerousText_whitespaceOnly_returnsFalse() {
+        assertFalse(SafetyChecker.containsDangerousText("   \t\n  "))
+    }
+
+    @Test
+    fun containsDangerousText_mixedCase_isDetected() {
+        assertTrue(SafetyChecker.containsDangerousText("Please ERASE everything"))
     }
 
     // -------------------------------------------------------------------------

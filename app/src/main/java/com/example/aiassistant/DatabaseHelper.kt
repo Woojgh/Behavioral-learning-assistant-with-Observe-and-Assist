@@ -29,7 +29,8 @@ data class RuleEntity(
 @Entity(
     indices = [
         Index(value = ["state", "actionText"], unique = true),
-        Index(value = ["state", "count"])
+        Index(value = ["state", "count"]),
+        Index(value = ["packageName", "count"])
     ]
 )
 data class UserPatternEntity(
@@ -113,6 +114,15 @@ interface UserPatternDao {
     @Query("SELECT * FROM UserPatternEntity WHERE state = :state AND actionText = :actionText LIMIT 1")
     suspend fun get(state: String, actionText: String): UserPatternEntity?
 
+    /**
+     * Fallback used when the current screen's stableState doesn't match any stored
+     * pattern (e.g. after a rotation produces a different structural fingerprint).
+     * Returns confident patterns learned in the same app, highest-count first, so
+     * the caller can verify the target text is still visible on the new layout.
+     */
+    @Query("SELECT * FROM UserPatternEntity WHERE packageName = :packageName AND count >= :minCount ORDER BY count DESC")
+    suspend fun getConfidentByPackage(packageName: String, minCount: Int): List<UserPatternEntity>
+
     @Insert
     suspend fun insert(pattern: UserPatternEntity)
 
@@ -163,7 +173,7 @@ interface SystemPatternDao {
 
 @Database(
     entities = [LogEntity::class, RuleEntity::class, UserPatternEntity::class, SystemPatternEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true  // Schema files written to app/schemas/ for migration tracking.
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -189,6 +199,16 @@ object DatabaseHelper {
         }
     }
 
+    /** Adds a (packageName, count) index to support orientation-agnostic pattern lookup. */
+    private val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_UserPatternEntity_packageName_count " +
+                        "ON UserPatternEntity(packageName, count)"
+            )
+        }
+    }
+
     /**
      * @Volatile ensures the cached instance is always read from main memory,
      * preventing a second thread from seeing a partially-constructed object.
@@ -205,7 +225,7 @@ object DatabaseHelper {
                 AppDatabase::class.java,
                 "ai_db"
             )
-            .addMigrations(MIGRATION_4_5)
+            .addMigrations(MIGRATION_4_5, MIGRATION_5_6)
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
             .also { db = it }

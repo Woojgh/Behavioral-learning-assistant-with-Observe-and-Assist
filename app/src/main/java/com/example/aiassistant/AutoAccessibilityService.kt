@@ -45,6 +45,10 @@ class AutoAccessibilityService : AccessibilityService() {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putString(KEY_MODE, mode.name).apply()
             cachedMode = mode
+            // Invalidate debounce and re-run pipeline immediately so the user
+            // doesn't have to navigate away / toggle the accessibility service
+            // for the new mode to apply to the screen already on display.
+            instance?.onModeChanged(mode)
         }
     }
 
@@ -61,12 +65,28 @@ class AutoAccessibilityService : AccessibilityService() {
     /** Minimum ms between snapshot builds (applies to both modes). */
     private val snapshotCooldownMs = 500L
 
+    /**
+     * How long the user must be idle (no taps/scrolls/text input) before the
+     * assistant acts in Assist mode. Prevents the assistant from firing while
+     * the user is actively using the screen.
+     */
+    private val userIdleThresholdMs = 1_500L
+
+    /** Timestamp of the last user-initiated interaction event (all modes). */
+    @Volatile private var lastUserInteractionTime = 0L
+
+    /** Pending debounced jobs — cancelled and rescheduled on each new screen change. */
+    private var pendingAssistJob: Job? = null
+    private var pendingReactorJob: Job? = null
+
     override fun onServiceConnected() {
         _instanceRef = WeakReference(this)
         // Load cached mode from prefs once at startup
         getMode(this)
         // Start monitoring system setting changes
         systemStateMonitor = SystemStateMonitor(this).also { it.start() }
+        // Notify overlay so the bubble colour updates immediately
+        OverlayService.refreshServiceState()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -81,34 +101,39 @@ class AutoAccessibilityService : AccessibilityService() {
             currentPackage = event.packageName?.toString()
         }
 
-        // --- OBSERVATION: record user-initiated actions (OBSERVE mode only) ---
-        if (mode == AgentMode.OBSERVE && (
-            event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
+        // --- INTERACTION TRACKING: update idle timer in all modes ---
+        // This must run in both OBSERVE and ASSIST so the idle-delay logic works.
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
             event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED ||
-            event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED)
+            event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
         ) {
-            val pkg = currentPackage ?: return
-            val state = lastScreenState ?: return
+            lastUserInteractionTime = System.currentTimeMillis()
 
-            // Extract event data NOW, before the event is recycled by Android.
-            // AccessibilityEvent objects are reused after onAccessibilityEvent returns.
-            val actionText = extractEventText(event)
-            val eventType = event.eventType
+            // --- OBSERVATION: record user-initiated actions (OBSERVE mode only) ---
+            if (mode == AgentMode.OBSERVE) {
+                val pkg = currentPackage ?: return
+                val state = lastScreenState ?: return
 
-            if (actionText != null && observeBusy.compareAndSet(false, true)) {
-                scope.launch {
-                    try {
-                        Observer.onUserActionDirect(
-                            context = this@AutoAccessibilityService,
-                            actionText = actionText,
-                            eventType = eventType,
-                            currentState = state,
-                            packageName = pkg
-                        )
-                    } catch (e: Exception) {
-                        Logger.logError("Observer.onUserActionDirect failed: ${e.message}")
-                    } finally {
-                        observeBusy.set(false)
+                // Extract event data NOW, before the event is recycled by Android.
+                // AccessibilityEvent objects are reused after onAccessibilityEvent returns.
+                val actionText = extractEventText(event)
+                val eventType = event.eventType
+
+                if (actionText != null && observeBusy.compareAndSet(false, true)) {
+                    scope.launch {
+                        try {
+                            Observer.onUserActionDirect(
+                                context = this@AutoAccessibilityService,
+                                actionText = actionText,
+                                eventType = eventType,
+                                currentState = state,
+                                packageName = pkg
+                            )
+                        } catch (e: Exception) {
+                            Logger.logError("Observer.onUserActionDirect failed: ${e.message}")
+                        } finally {
+                            observeBusy.set(false)
+                        }
                     }
                 }
             }
@@ -140,26 +165,109 @@ class AutoAccessibilityService : AccessibilityService() {
             if (snapshot.stableState == lastScreenState) return
             lastScreenState = snapshot.stableState
 
-            // Check system patterns (runs in both modes, only acts in ASSIST)
-            scope.launch {
+            // Check system patterns and run assist engine after user goes idle.
+            // Cancel any previously pending action so we always wait for a fresh
+            // idle period from the most recent screen change.
+            val capturedSnapshot = snapshot
+
+            pendingReactorJob?.cancel()
+            pendingReactorJob = scope.launch {
+                delay(userIdleThresholdMs)
+                // Secondary guard: abort if the user interacted during the delay.
+                if (System.currentTimeMillis() - lastUserInteractionTime < userIdleThresholdMs) return@launch
                 try {
-                    ScreenReactor.checkAndReact(this@AutoAccessibilityService, snapshot, mode)
+                    ScreenReactor.checkAndReact(this@AutoAccessibilityService, capturedSnapshot, mode)
                 } catch (e: Exception) {
                     Logger.logError("ScreenReactor.checkAndReact failed: ${e.message}")
                 }
             }
 
             // Only run assist engine in ASSIST mode
-            if (mode == AgentMode.ASSIST && assistBusy.compareAndSet(false, true)) {
-                scope.launch {
+            if (mode == AgentMode.ASSIST) {
+                pendingAssistJob?.cancel()
+                pendingAssistJob = scope.launch {
+                    delay(userIdleThresholdMs)
+                    // Secondary guard: abort if the user interacted during the delay.
+                    if (System.currentTimeMillis() - lastUserInteractionTime < userIdleThresholdMs) return@launch
+                    if (assistBusy.compareAndSet(false, true)) {
+                        try {
+                            AssistEngine.handleScreen(
+                                service = this@AutoAccessibilityService,
+                                context = this@AutoAccessibilityService,
+                                snapshot = capturedSnapshot
+                            )
+                        } catch (e: Exception) {
+                            Logger.logError("AssistEngine.handleScreen failed: ${e.message}")
+                        } finally {
+                            assistBusy.set(false)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Called when the user toggles OFF <-> OBSERVE <-> ASSIST while the service
+     * is already running. Without this, the stableState debounce in
+     * onAccessibilityEvent suppresses re-processing of the current screen,
+     * making it look like ASSIST "isn't doing anything" until the next screen
+     * change — the exact symptom that disappeared after restarting the service.
+     */
+    fun onModeChanged(newMode: AgentMode) {
+        // Reset debounce so the next accessibility event will reprocess.
+        lastScreenState = null
+        lastSnapshotTime = 0L
+
+        // Cancel any assist/reactor actions pending from the previous mode.
+        pendingAssistJob?.cancel()
+        pendingAssistJob = null
+        pendingReactorJob?.cancel()
+        pendingReactorJob = null
+
+        if (newMode == AgentMode.OFF) return
+
+        // Proactively run the new-mode pipeline on the screen already showing.
+        val root = try { rootInActiveWindow } catch (_: Exception) { null } ?: return
+        val pkg = currentPackage
+        val snapshot = try {
+            UIUtils.snapshotScreen(pkg, root)
+        } catch (_: Exception) {
+            return
+        }
+
+        lastSnapshot = snapshot
+        lastScreenState = snapshot.stableState
+
+        // Also apply the idle delay here — the user just tapped the mode toggle,
+        // so they're actively interacting. Wait for them to stop before acting.
+        val capturedSnapshot = snapshot
+
+        pendingReactorJob?.cancel()
+        pendingReactorJob = scope.launch {
+            delay(userIdleThresholdMs)
+            if (System.currentTimeMillis() - lastUserInteractionTime < userIdleThresholdMs) return@launch
+            try {
+                ScreenReactor.checkAndReact(this@AutoAccessibilityService, capturedSnapshot, newMode)
+            } catch (e: Exception) {
+                Logger.logError("ScreenReactor.checkAndReact failed after mode change: ${e.message}")
+            }
+        }
+
+        if (newMode == AgentMode.ASSIST) {
+            pendingAssistJob?.cancel()
+            pendingAssistJob = scope.launch {
+                delay(userIdleThresholdMs)
+                if (System.currentTimeMillis() - lastUserInteractionTime < userIdleThresholdMs) return@launch
+                if (assistBusy.compareAndSet(false, true)) {
                     try {
                         AssistEngine.handleScreen(
                             service = this@AutoAccessibilityService,
                             context = this@AutoAccessibilityService,
-                            snapshot = snapshot
+                            snapshot = capturedSnapshot
                         )
                     } catch (e: Exception) {
-                        Logger.logError("AssistEngine.handleScreen failed: ${e.message}")
+                        Logger.logError("AssistEngine.handleScreen failed after mode change: ${e.message}")
                     } finally {
                         assistBusy.set(false)
                     }
@@ -191,5 +299,7 @@ class AutoAccessibilityService : AccessibilityService() {
         lastSnapshot = null
         _instanceRef = null
         scope.cancel()
+        // Notify overlay so the bubble colour updates immediately
+        OverlayService.refreshServiceState()
     }
 }
