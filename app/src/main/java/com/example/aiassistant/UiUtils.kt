@@ -12,6 +12,8 @@ object UIUtils {
         val nodes = mutableListOf<NodeSnapshot>()
         val textElements = mutableListOf<String>()
         val structParts = mutableListOf<String>()
+        // Loose fingerprint: only interactable nodes, collected for sorting.
+        val looseParts = mutableListOf<String>()
 
         fun walk(node: AccessibilityNodeInfo?) {
             if (node == null) return
@@ -34,8 +36,17 @@ object UIUtils {
             text?.let { textElements.add(it) }
             desc?.let { textElements.add(it) }
 
-            // Structural fingerprint: class + interactivity flags (ignores text)
-            structParts.add("${cls ?: "?"}:${if (node.isClickable) "C" else ""}${if (node.isScrollable) "S" else ""}${if (node.isEditable) "E" else ""}")
+            val flags = "${if (node.isClickable) "C" else ""}${if (node.isScrollable) "S" else ""}${if (node.isEditable) "E" else ""}"
+            val descriptor = "${cls ?: "?"}:$flags"
+
+            // Strict fingerprint: every node in tree order.
+            structParts.add(descriptor)
+
+            // Loose fingerprint: only nodes the user can actually interact with.
+            // Sorting makes this order-independent so minor DOM reordering is ignored.
+            if (node.isClickable || node.isScrollable || node.isEditable) {
+                looseParts.add(descriptor)
+            }
 
             for (i in 0 until node.childCount) {
                 try {
@@ -56,9 +67,14 @@ object UIUtils {
         val structHash = structParts.joinToString("|").hashCode().toUInt().toString(16)
         val stableState = "$pkg:$structHash"
 
+        // Prefix with 'L' so loose-state keys never collide with strict-state keys in the DB.
+        val looseHash = looseParts.sorted().joinToString("|").hashCode().toUInt().toString(16)
+        val looseState = "$pkg:L$looseHash"
+
         return ScreenSnapshot(
             packageName = pkg,
             stableState = stableState,
+            looseState = looseState,
             nodes = nodes,
             textElements = textElements
         )

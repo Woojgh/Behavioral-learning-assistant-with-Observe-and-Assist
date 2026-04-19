@@ -45,15 +45,19 @@ object PatternMatcher {
     ): ActionCommand? {
         val dao = DatabaseHelper.getDB(context).userPatternDao()
 
-        // 1. Exact state match — the primary, tightest path.
+        // Tier 1: exact strict-state match — backward compat with old learned patterns.
         val top = dao.getTopByState(snapshot.stableState)
         pickActionForPattern(top, snapshot.textElements, MIN_CONFIDENCE)?.let { return it }
 
-        // 2. Package-level fallback. Orientation changes and alternate layouts
-        // produce a different structural fingerprint, so the exact-state lookup
-        // above misses even though the same app is showing the same button
-        // (e.g. a "Skip" learned in portrait appearing on the landscape screen).
-        // Require a stricter confidence threshold for this looser match.
+        // Tier 2: loose-state match — catches new patterns stored with the interactable-
+        // only hash (more resilient to cosmetic layout changes like ad banners).
+        // Only try if the two hashes actually differ (avoids a redundant DB query).
+        if (snapshot.looseState != snapshot.stableState) {
+            val looseTop = dao.getTopByState(snapshot.looseState)
+            pickActionForPattern(looseTop, snapshot.textElements, MIN_CONFIDENCE)?.let { return it }
+        }
+
+        // Tier 3: package-level fallback for orientation / layout variant mismatches.
         val packagePatterns = dao.getConfidentByPackage(
             packageName = snapshot.packageName,
             minCount = MIN_CROSS_STATE_CONFIDENCE

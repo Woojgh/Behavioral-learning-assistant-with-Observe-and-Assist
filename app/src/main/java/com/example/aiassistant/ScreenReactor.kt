@@ -36,7 +36,12 @@ object ScreenReactor {
         if (!SafetyChecker.isAppAllowed(context, snapshot.packageName)) return
 
         val dao = DatabaseHelper.getDB(context).systemPatternDao()
-        val patterns = dao.getByScreenState(snapshot.stableState)
+        // Query by both strict and loose state so old and new patterns both match.
+        val strict = dao.getByScreenState(snapshot.stableState)
+        val loose = if (snapshot.looseState != snapshot.stableState)
+            dao.getByScreenState(snapshot.looseState) else emptyList()
+        val seenIds = mutableSetOf<Int>()
+        val patterns = (strict + loose).filter { seenIds.add(it.id) }
 
         for (pattern in patterns) {
             // Need enough confidence

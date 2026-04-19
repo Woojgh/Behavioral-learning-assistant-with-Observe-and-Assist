@@ -143,6 +143,25 @@ interface UserPatternDao {
 
     @Query("DELETE FROM UserPatternEntity")
     suspend fun deleteAll()
+
+    /**
+     * Reduces a pattern's confidence by 1 (floor 0) when the user overrides it.
+     */
+    @Query("UPDATE UserPatternEntity SET count = MAX(0, count - 1) WHERE state = :state AND actionText = :actionText")
+    suspend fun decrementCount(state: String, actionText: String)
+
+    /**
+     * Removes all patterns whose confidence has dropped to zero.
+     */
+    @Query("DELETE FROM UserPatternEntity WHERE count = 0")
+    suspend fun deleteZeroCount()
+
+    /**
+     * Reduces confidence by 1 (floor 0) for every pattern not seen since [cutoffMs].
+     * Used by the periodic decay sweep.
+     */
+    @Query("UPDATE UserPatternEntity SET count = MAX(0, count - 1) WHERE lastSeen < :cutoffMs")
+    suspend fun decrementStalePatterns(cutoffMs: Long)
 }
 
 @Dao
@@ -275,6 +294,28 @@ object DatabaseHelper {
                 )
             )
         }
+    }
+
+    /**
+     * Called when the user overrides an action the assistant just performed on the
+     * same screen. Reduces that pattern's confidence; deletes it if it hits zero.
+     */
+    suspend fun recordCorrection(context: Context, state: String, actionText: String) {
+        val dao = getDB(context).userPatternDao()
+        dao.decrementCount(state, actionText)
+        dao.deleteZeroCount()
+    }
+
+    /**
+     * Decays patterns that haven't been observed in [decayAfterDays] days by
+     * subtracting 1 from their confidence, then removes those that reach zero.
+     * Safe to call repeatedly — only affects genuinely stale patterns.
+     */
+    suspend fun decayOldPatterns(context: Context, decayAfterDays: Int = 30) {
+        val dao = getDB(context).userPatternDao()
+        val cutoffMs = System.currentTimeMillis() - decayAfterDays.toLong() * 24 * 60 * 60 * 1_000
+        dao.decrementStalePatterns(cutoffMs)
+        dao.deleteZeroCount()
     }
 
     suspend fun seedDefaultRules(context: Context) {
