@@ -9,21 +9,23 @@ import android.content.Context
  */
 object AssistEngine {
 
-    suspend fun handleScreen(
-        service: AccessibilityService,
+    /**
+     * Checks whether there is a safe, confident action to take on this screen
+     * WITHOUT executing it. Used to generate a preview before the idle delay fires.
+     *
+     * Returns the matching command, or null if nothing should be done.
+     */
+    suspend fun findPendingAction(
         context: Context,
         snapshot: ScreenSnapshot
-    ) {
-        // 1. Debounce
-        if (!SafetyChecker.checkCooldown()) return
+    ): ActionCommand? {
+        // App exclusion
+        if (!SafetyChecker.isAppAllowed(context, snapshot.packageName)) return null
 
-        // 2. App exclusion
-        if (!SafetyChecker.isAppAllowed(context, snapshot.packageName)) return
+        // Find best action from patterns or rules
+        val command = PatternMatcher.findBestAction(context, snapshot) ?: return null
 
-        // 3. Find best action from patterns or rules
-        val command = PatternMatcher.findBestAction(context, snapshot) ?: return
-
-        // 4. Safety check
+        // Safety check — log blocked actions for auditability
         if (!SafetyChecker.isActionSafe(command)) {
             DatabaseHelper.logAction(
                 context = context,
@@ -33,16 +35,30 @@ object AssistEngine {
                 actionDetail = "[BLOCKED] ${command.target}",
                 success = false
             )
-            return
+            return null
         }
 
-        // 5. Execute
-        val success = ActionExecutor.executeSafe(service, command)
+        return command
+    }
 
-        // 6. Record cooldown
+    /**
+     * Executes a command that was pre-validated by [findPendingAction].
+     * Handles the action cooldown, execution, logging, and overlay update.
+     *
+     * Returns the command on success, null if cooldown blocked it or execution failed.
+     */
+    suspend fun executeAction(
+        service: AccessibilityService,
+        context: Context,
+        snapshot: ScreenSnapshot,
+        command: ActionCommand
+    ): ActionCommand? {
+        // Cooldown guard (re-checked at execution time, not preview time)
+        if (!SafetyChecker.checkCooldown()) return null
+
+        val success = ActionExecutor.executeSafe(service, command)
         SafetyChecker.recordActionTime()
 
-        // 7. Log
         DatabaseHelper.logAction(
             context = context,
             packageName = snapshot.packageName,
@@ -52,9 +68,21 @@ object AssistEngine {
             success = success
         )
 
-        // 8. Update overlay
-        if (success) {
-            OverlayService.updateStatus("${command.type.name}: ${command.target}")
-        }
+        if (success) OverlayService.updateStatus("${command.type.name}: ${command.target}")
+
+        return if (success) command else null
+    }
+
+    /**
+     * Convenience wrapper: find + execute in one call.
+     * Used when no preview is needed (e.g. direct calls from tests or legacy paths).
+     */
+    suspend fun handleScreen(
+        service: AccessibilityService,
+        context: Context,
+        snapshot: ScreenSnapshot
+    ): ActionCommand? {
+        val command = findPendingAction(context, snapshot) ?: return null
+        return executeAction(service, context, snapshot, command)
     }
 }

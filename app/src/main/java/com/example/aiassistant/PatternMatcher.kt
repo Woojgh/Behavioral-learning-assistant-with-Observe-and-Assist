@@ -13,6 +13,14 @@ object PatternMatcher {
      * before the app will replay it automatically.
      */
     const val MIN_CONFIDENCE = 3
+
+    /**
+     * Higher bar for cross-state matching. If the current screen's stableState
+     * doesn't match the one the pattern was learned on (e.g. after a rotation
+     * or layout variant), we require stronger evidence before replaying it on
+     * an unfamiliar structural fingerprint.
+     */
+    const val MIN_CROSS_STATE_CONFIDENCE = 5
     private const val TEXT_MATCH_THRESHOLD = 0.85
 
     /**
@@ -36,22 +44,67 @@ object PatternMatcher {
         snapshot: ScreenSnapshot
     ): ActionCommand? {
         val dao = DatabaseHelper.getDB(context).userPatternDao()
-        val top = dao.getTopByState(snapshot.stableState) ?: return null
 
-        // Only act on high-confidence patterns
-        if (top.count < MIN_CONFIDENCE) return null
+        // Tier 1: exact strict-state match — backward compat with old learned patterns.
+        val top = dao.getTopByState(snapshot.stableState)
+        pickActionForPattern(top, snapshot.textElements, MIN_CONFIDENCE)?.let { return it }
 
-        // Verify the target text still exists on the current screen.
-        // Fuzzy matching (Jaro-Winkler ≥ 0.85) handles minor dynamic text changes
-        // (e.g. "Allow" vs "Allow Once") without breaking screen recognition.
-        val matchedTarget = findBestMatchingTextElement(
-            elements = snapshot.textElements,
-            targetText = top.actionText
-        ) ?: return null
+        // Tier 2: loose-state match — catches new patterns stored with the interactable-
+        // only hash (more resilient to cosmetic layout changes like ad banners).
+        // Only try if the two hashes actually differ (avoids a redundant DB query).
+        if (snapshot.looseState != snapshot.stableState) {
+            val looseTop = dao.getTopByState(snapshot.looseState)
+            pickActionForPattern(looseTop, snapshot.textElements, MIN_CONFIDENCE)?.let { return it }
+        }
 
-        val type = parseActionType(top.actionType)
-        // Use the live element text (not the stored text) so the click target is accurate.
-        return ActionCommand(type = type, target = matchedTarget)
+        // Tier 3: package-level fallback for orientation / layout variant mismatches.
+        val packagePatterns = dao.getConfidentByPackage(
+            packageName = snapshot.packageName,
+            minCount = MIN_CROSS_STATE_CONFIDENCE
+        )
+        return pickFirstMatchingPackagePattern(
+            patterns = packagePatterns,
+            excludeState = snapshot.stableState,
+            textElements = snapshot.textElements
+        )
+    }
+
+    /**
+     * Pure helper: given a candidate pattern (or null) and the current screen's
+     * text elements, returns an ActionCommand if the pattern meets [minConfidence]
+     * and its target text fuzzy-matches something visible.
+     *
+     * Verifies the target still exists on-screen. Fuzzy matching (Jaro-Winkler ≥ 0.85)
+     * handles minor dynamic text changes (e.g. "Allow" vs "Allow Once").
+     * The command's target is the live element text, not the stored text.
+     */
+    internal fun pickActionForPattern(
+        pattern: UserPatternEntity?,
+        textElements: List<String>,
+        minConfidence: Int
+    ): ActionCommand? {
+        if (pattern == null || pattern.count < minConfidence) return null
+        val matched = findBestMatchingTextElement(textElements, pattern.actionText) ?: return null
+        return ActionCommand(type = parseActionType(pattern.actionType), target = matched)
+    }
+
+    /**
+     * Pure helper for the package-level fallback. Walks [patterns] in order
+     * (caller supplies them count-DESC) and returns the first one whose stored
+     * target text fuzzy-matches a currently visible element, excluding any
+     * pattern whose state equals [excludeState] (already tried by the caller).
+     */
+    internal fun pickFirstMatchingPackagePattern(
+        patterns: List<UserPatternEntity>,
+        excludeState: String,
+        textElements: List<String>
+    ): ActionCommand? {
+        for (pattern in patterns) {
+            if (pattern.state == excludeState) continue
+            val matched = findBestMatchingTextElement(textElements, pattern.actionText) ?: continue
+            return ActionCommand(type = parseActionType(pattern.actionType), target = matched)
+        }
+        return null
     }
 
     private suspend fun findFromRules(

@@ -41,6 +41,41 @@ class OverlayService : Service() {
         fun updateStatus(text: String) {
             instance?.postStatus(text)
         }
+
+        /** Called when the accessibility service connects or disconnects. */
+        fun refreshServiceState() {
+            instance?.mainHandler?.post {
+                instance?.refreshPanelContent()
+            }
+        }
+
+        /**
+         * Shows a pending-action preview on the bubble so the user can see what
+         * the assistant is about to do and cancel it by tapping the bubble.
+         * Safe to call from any thread.
+         */
+        fun showPendingAction(command: ActionCommand) {
+            instance?.mainHandler?.post {
+                instance?.apply {
+                    pendingActionText = command.target
+                    updateBubbleAppearance()
+                }
+            }
+        }
+
+        /**
+         * Clears the pending-action preview and restores the normal bubble appearance.
+         * Always called — whether the action executed, was cancelled, or the job was dropped.
+         * Safe to call from any thread.
+         */
+        fun clearPendingAction() {
+            instance?.mainHandler?.post {
+                instance?.apply {
+                    pendingActionText = null
+                    updateBubbleAppearance()
+                }
+            }
+        }
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -59,6 +94,12 @@ class OverlayService : Service() {
     private var panelRefreshRunnable: Runnable? = null
 
     private var lastStatus = "AI Ready"
+
+    /**
+     * Non-null while the assistant has a pending action queued.
+     * Drives the amber "about to act" bubble appearance and tap-to-cancel behaviour.
+     */
+    private var pendingActionText: String? = null
 
     // Drag tracking
     private var dragInitX = 0
@@ -154,7 +195,14 @@ class OverlayService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!isDragging) togglePanel()
+                    if (!isDragging) {
+                        if (pendingActionText != null) {
+                            // Tap while action is pending — cancel it.
+                            AutoAccessibilityService.instance?.cancelPendingAssist()
+                        } else {
+                            togglePanel()
+                        }
+                    }
                     true
                 }
                 else -> false
@@ -168,12 +216,23 @@ class OverlayService : Service() {
         val mode = AutoAccessibilityService.cachedMode
         val connected = AutoAccessibilityService.instance != null
         bubbleView?.apply {
-            text = when (mode) {
-                AgentMode.OFF     -> "AI\nOFF"
-                AgentMode.OBSERVE -> "AI\nOBS"
-                AgentMode.ASSIST  -> "AI\nAST"
+            val pending = pendingActionText
+            if (pending != null) {
+                // Pending state: show truncated target with a cancel hint.
+                val label = if (pending.length > 9) pending.take(9) + "…" else pending
+                text = "⧖ $label"
+                background = createBubbleBackground(
+                    Color.argb(220, 160, 100, 10), // amber — distinct from all mode colours
+                    serviceColor(connected)
+                )
+            } else {
+                text = when (mode) {
+                    AgentMode.OFF     -> "AI\nOFF"
+                    AgentMode.OBSERVE -> "AI\nOBS"
+                    AgentMode.ASSIST  -> "AI\nAST"
+                }
+                background = createBubbleBackground(modeColor(mode), serviceColor(connected))
             }
-            background = createBubbleBackground(modeColor(mode), serviceColor(connected))
         }
     }
 

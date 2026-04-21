@@ -29,7 +29,8 @@ data class RuleEntity(
 @Entity(
     indices = [
         Index(value = ["state", "actionText"], unique = true),
-        Index(value = ["state", "count"])
+        Index(value = ["state", "count"]),
+        Index(value = ["packageName", "count"])
     ]
 )
 data class UserPatternEntity(
@@ -113,6 +114,15 @@ interface UserPatternDao {
     @Query("SELECT * FROM UserPatternEntity WHERE state = :state AND actionText = :actionText LIMIT 1")
     suspend fun get(state: String, actionText: String): UserPatternEntity?
 
+    /**
+     * Fallback used when the current screen's stableState doesn't match any stored
+     * pattern (e.g. after a rotation produces a different structural fingerprint).
+     * Returns confident patterns learned in the same app, highest-count first, so
+     * the caller can verify the target text is still visible on the new layout.
+     */
+    @Query("SELECT * FROM UserPatternEntity WHERE packageName = :packageName AND count >= :minCount ORDER BY count DESC")
+    suspend fun getConfidentByPackage(packageName: String, minCount: Int): List<UserPatternEntity>
+
     @Insert
     suspend fun insert(pattern: UserPatternEntity)
 
@@ -133,6 +143,25 @@ interface UserPatternDao {
 
     @Query("DELETE FROM UserPatternEntity")
     suspend fun deleteAll()
+
+    /**
+     * Reduces a pattern's confidence by 1 (floor 0) when the user overrides it.
+     */
+    @Query("UPDATE UserPatternEntity SET count = MAX(0, count - 1) WHERE state = :state AND actionText = :actionText")
+    suspend fun decrementCount(state: String, actionText: String)
+
+    /**
+     * Removes all patterns whose confidence has dropped to zero.
+     */
+    @Query("DELETE FROM UserPatternEntity WHERE count = 0")
+    suspend fun deleteZeroCount()
+
+    /**
+     * Reduces confidence by 1 (floor 0) for every pattern not seen since [cutoffMs].
+     * Used by the periodic decay sweep.
+     */
+    @Query("UPDATE UserPatternEntity SET count = MAX(0, count - 1) WHERE lastSeen < :cutoffMs")
+    suspend fun decrementStalePatterns(cutoffMs: Long)
 }
 
 @Dao
@@ -163,7 +192,7 @@ interface SystemPatternDao {
 
 @Database(
     entities = [LogEntity::class, RuleEntity::class, UserPatternEntity::class, SystemPatternEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true  // Schema files written to app/schemas/ for migration tracking.
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -189,6 +218,16 @@ object DatabaseHelper {
         }
     }
 
+    /** Adds a (packageName, count) index to support orientation-agnostic pattern lookup. */
+    private val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_UserPatternEntity_packageName_count " +
+                        "ON UserPatternEntity(packageName, count)"
+            )
+        }
+    }
+
     /**
      * @Volatile ensures the cached instance is always read from main memory,
      * preventing a second thread from seeing a partially-constructed object.
@@ -205,7 +244,7 @@ object DatabaseHelper {
                 AppDatabase::class.java,
                 "ai_db"
             )
-            .addMigrations(MIGRATION_4_5)
+            .addMigrations(MIGRATION_4_5, MIGRATION_5_6)
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
             .also { db = it }
@@ -255,6 +294,28 @@ object DatabaseHelper {
                 )
             )
         }
+    }
+
+    /**
+     * Called when the user overrides an action the assistant just performed on the
+     * same screen. Reduces that pattern's confidence; deletes it if it hits zero.
+     */
+    suspend fun recordCorrection(context: Context, state: String, actionText: String) {
+        val dao = getDB(context).userPatternDao()
+        dao.decrementCount(state, actionText)
+        dao.deleteZeroCount()
+    }
+
+    /**
+     * Decays patterns that haven't been observed in [decayAfterDays] days by
+     * subtracting 1 from their confidence, then removes those that reach zero.
+     * Safe to call repeatedly — only affects genuinely stale patterns.
+     */
+    suspend fun decayOldPatterns(context: Context, decayAfterDays: Int = 30) {
+        val dao = getDB(context).userPatternDao()
+        val cutoffMs = System.currentTimeMillis() - decayAfterDays.toLong() * 24 * 60 * 60 * 1_000
+        dao.decrementStalePatterns(cutoffMs)
+        dao.deleteZeroCount()
     }
 
     suspend fun seedDefaultRules(context: Context) {

@@ -73,14 +73,17 @@ class SystemStateMonitor(private val context: Context) {
                 scope.launch {
                     try {
                         val dao = DatabaseHelper.getDB(context).systemPatternDao()
-                        val existing = dao.get(snapshot.stableState, setting.name, newVal)
+                        // New patterns stored under looseState for resilience;
+                        // old strict-state patterns are still found by ScreenReactor's dual query.
+                        val existing = dao.get(snapshot.looseState, setting.name, newVal)
+                            ?: dao.get(snapshot.stableState, setting.name, newVal)
                         if (existing != null) {
                             dao.incrementCount(existing.id)
                         } else {
                             dao.insert(
                                 SystemPatternEntity(
                                     packageName = pkg,
-                                    screenState = snapshot.stableState,
+                                    screenState = snapshot.looseState,
                                     matchedKeywords = keywords,
                                     settingName = setting.name,
                                     oldValue = oldVal,
