@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0"
+       lastSavedToolsVersion="23231" systemVersion="24A335"
+       minimumToolsVersion="Automatic" sourceLanguage="Swift"
+       usedWithSwiftData="NO" userDefinedModelVersionIdentifier="">
+
+    <entity name="LogEntity" representedClassName="LogEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="actionDetail" attributeType="String" defaultValueString=""/>
+        <attribute name="actionType" attributeType="String" defaultValueString="CLICK"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="packageName" attributeType="String" defaultValueString=""/>
+        <attribute name="state" attributeType="String" defaultValueString=""/>
+        <attribute name="success" attributeType="Boolean" defaultValueString="YES" usesScalarValueType="YES"/>
+        <attribute name="timestamp" attributeType="Date" usesScalarValueType="NO"/>
+    </entity>
+
+    <entity name="RuleEntity" representedClassName="RuleEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="actionType" attributeType="String" defaultValueString="CLICK"/>
+        <attribute name="enabled" attributeType="Boolean" defaultValueString="YES" usesScalarValueType="YES"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="keyword" attributeType="String" defaultValueString=""/>
+    </entity>
+
+    <entity name="UserPatternEntity" representedClassName="UserPatternEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="actionText" attributeType="String" defaultValueString=""/>
+        <attribute name="actionType" attributeType="String" defaultValueString="CLICK"/>
+        <attribute name="count" attributeType="Integer 32" defaultValueString="1" usesScalarValueType="YES"/>
+        <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="lastSeen" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="packageName" attributeType="String" defaultValueString=""/>
+        <attribute name="state" attributeType="String" defaultValueString=""/>
+    </entity>
+
+</model>
