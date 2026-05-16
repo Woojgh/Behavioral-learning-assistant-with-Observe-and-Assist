@@ -89,6 +89,7 @@ class OverlayService : Service() {
     private var panelView: LinearLayout? = null
     private var panelStatusTv: TextView? = null
     private val panelModeBtns = Array<Button?>(3) { null } // [OFF, OBSERVE, ASSIST]
+    private var panelRemoteSkipBtn: Button? = null
     private var panelServiceStatusTv: TextView? = null
     private var panelServiceBtn: Button? = null
     private var panelRefreshRunnable: Runnable? = null
@@ -334,6 +335,17 @@ class OverlayService : Service() {
         }
         panel.addView(modeRow, fullWidthWrap().apply { bottomMargin = dp(10) })
 
+        // -- Remote skip confirmation toggle --
+        panel.addView(sectionLabel("Remote Skip Confirmation", bottomPad = dp(4)))
+        val remoteSkipEnabled = RemoteSkipController.isRemoteSkipEnabled(this)
+        val remoteSkipBtn = actionButton(remoteSkipToggleLabel(remoteSkipEnabled)) {
+            val current = RemoteSkipController.isRemoteSkipEnabled(this@OverlayService)
+            val next = !current
+            RemoteSkipController.setRemoteSkipEnabled(this@OverlayService, next)
+            panelRemoteSkipBtn?.text = remoteSkipToggleLabel(next)
+        }
+        panelRemoteSkipBtn = remoteSkipBtn
+        panel.addView(remoteSkipBtn)
         // -- Service status + toggle --
         // Android doesn't allow programmatic enable/disable of accessibility services;
         // the best we can do is show connection state and deep-link to the exact service
@@ -384,6 +396,7 @@ class OverlayService : Service() {
         safeRemove(panelView)
         panelView = null
         panelStatusTv = null
+        panelRemoteSkipBtn = null
         panelServiceStatusTv = null
         panelServiceBtn = null
         panelModeBtns.fill(null)
@@ -428,6 +441,8 @@ class OverlayService : Service() {
         listOf(AgentMode.OFF, AgentMode.OBSERVE, AgentMode.ASSIST).forEachIndexed { i, mode ->
             panelModeBtns[i]?.setBackgroundColor(modeBtnColor(mode, active = mode == currentMode))
         }
+        panelRemoteSkipBtn?.text =
+            remoteSkipToggleLabel(RemoteSkipController.isRemoteSkipEnabled(this))
 
         // Keep bubble in sync too
         updateBubbleAppearance()
@@ -455,6 +470,9 @@ class OverlayService : Service() {
 
     private fun modeBtnColor(mode: AgentMode, active: Boolean): Int =
         if (active) modeColor(mode) else Color.argb(180, 50, 50, 50)
+    private fun remoteSkipToggleLabel(enabled: Boolean): String =
+        if (enabled) "Remote Skip: ON (tap to disable)"
+        else "Remote Skip: OFF (tap to enable)"
 
     private class SplitBottomColorDrawable(
         private val topColor: Int,

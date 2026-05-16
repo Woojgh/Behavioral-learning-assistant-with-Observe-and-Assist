@@ -50,6 +50,10 @@
                 android:resource="@xml/accessibility_config" />
         </service>
 
+        <receiver
+            android:name=".RemoteSkipActionReceiver"
+            android:exported="false" />
+
     </application>
 
 </manifest>
