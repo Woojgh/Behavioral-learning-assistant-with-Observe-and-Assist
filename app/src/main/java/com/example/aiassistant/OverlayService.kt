@@ -88,7 +88,7 @@ class OverlayService : Service() {
     // Expanded panel
     private var panelView: LinearLayout? = null
     private var panelStatusTv: TextView? = null
-    private val panelModeBtns = Array<Button?>(3) { null } // [OFF, OBSERVE, ASSIST]
+    private val panelModeBtns = Array<Button?>(4) { null } // [OFF, OBSERVE, ASSIST, REMOTE_SKIP]
     private var panelRemoteSkipBtn: Button? = null
     private var panelServiceStatusTv: TextView? = null
     private var panelServiceBtn: Button? = null
@@ -231,6 +231,7 @@ class OverlayService : Service() {
                     AgentMode.OFF     -> "AI\nOFF"
                     AgentMode.OBSERVE -> "AI\nOBS"
                     AgentMode.ASSIST  -> "AI\nAST"
+                    AgentMode.REMOTE_SKIP -> "AI\nRMT"
                 }
                 background = createBubbleBackground(modeColor(mode), serviceColor(connected))
             }
@@ -307,7 +308,8 @@ class OverlayService : Service() {
         val modeList = listOf(
             AgentMode.OFF     to "Off",
             AgentMode.OBSERVE to "Observe",
-            AgentMode.ASSIST  to "Assist"
+            AgentMode.ASSIST  to "Assist",
+            AgentMode.REMOTE_SKIP to "Remote"
         )
 
         modeList.forEachIndexed { i, (mode, label) ->
@@ -319,7 +321,7 @@ class OverlayService : Service() {
                 setTextColor(Color.WHITE)
                 layoutParams = LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-                ).apply { if (i < 2) marginEnd = dp(4) }
+                ).apply { if (i < modeList.lastIndex) marginEnd = dp(4) }
 
                 setOnClickListener {
                     AutoAccessibilityService.setMode(this@OverlayService, mode)
@@ -438,7 +440,7 @@ class OverlayService : Service() {
 
         // Mode button highlights (in case mode changed from the main app)
         val currentMode = AutoAccessibilityService.cachedMode
-        listOf(AgentMode.OFF, AgentMode.OBSERVE, AgentMode.ASSIST).forEachIndexed { i, mode ->
+        listOf(AgentMode.OFF, AgentMode.OBSERVE, AgentMode.ASSIST, AgentMode.REMOTE_SKIP).forEachIndexed { i, mode ->
             panelModeBtns[i]?.setBackgroundColor(modeBtnColor(mode, active = mode == currentMode))
         }
         panelRemoteSkipBtn?.text =
@@ -456,6 +458,7 @@ class OverlayService : Service() {
         AgentMode.OFF     -> Color.argb(215, 70, 70, 70)
         AgentMode.OBSERVE -> Color.argb(215, 20, 90, 180)
         AgentMode.ASSIST  -> Color.argb(215, 20, 140, 60)
+        AgentMode.REMOTE_SKIP -> Color.argb(215, 130, 70, 170)
     }
     private fun serviceColor(connected: Boolean): Int =
         if (connected) Color.argb(230, 80, 210, 130) else Color.argb(230, 220, 80, 80)

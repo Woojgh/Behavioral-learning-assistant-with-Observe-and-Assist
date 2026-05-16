@@ -64,6 +64,20 @@ object RemoteSkipController {
         if (!isRemoteSkipEnabled(context)) return false
         return isSkipClickCommand(command)
     }
+    /**
+     * Finds a likely skip target directly from the current screen text.
+     * Used by REMOTE_SKIP mode, which bypasses observe/assist pattern matching.
+     */
+    fun findSkipCommand(snapshot: ScreenSnapshot): ActionCommand? {
+        val target = snapshot.textElements
+            .asSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .filter { skipRegex.containsMatchIn(it) }
+            .minByOrNull { it.length }
+            ?: return null
+        return ActionCommand(type = ActionType.CLICK, target = target)
+    }
 
     private fun isSkipClickCommand(command: ActionCommand): Boolean {
         if (command.type != ActionType.CLICK) return false

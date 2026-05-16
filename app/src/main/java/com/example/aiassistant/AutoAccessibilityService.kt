@@ -7,7 +7,7 @@ import kotlinx.coroutines.*
 import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicBoolean
 
-enum class AgentMode { OFF, OBSERVE, ASSIST }
+enum class AgentMode { OFF, OBSERVE, ASSIST, REMOTE_SKIP }
 
 class AutoAccessibilityService : AccessibilityService() {
 
@@ -264,7 +264,7 @@ class AutoAccessibilityService : AccessibilityService() {
             }
         }
 
-        // --- SCREEN CHANGE: snapshot + assist ---
+        // --- SCREEN CHANGE: snapshot + assist/remote-skip ---
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
             event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
         ) {
@@ -310,15 +310,61 @@ class AutoAccessibilityService : AccessibilityService() {
             // idle period from the most recent screen change.
             scheduleReactor(snapshot, mode, "ScreenReactor.checkAndReact failed")
 
-            // Only run assist engine in ASSIST mode
+            // Only run action pipelines in modes that can act.
             if (mode == AgentMode.ASSIST) {
                 schedulePendingAssist(snapshot, "AssistEngine.executeAction failed")
+            } else if (mode == AgentMode.REMOTE_SKIP) {
+                schedulePendingRemoteSkipOnly(snapshot, "Remote skip detection failed")
+            }
+        }
+    }
+    /**
+     * Schedule a debounced remote-only pass that looks for visible "Skip" targets
+     * and prompts watch/earbud confirmation, without running observe/assist logic.
+     */
+    private fun schedulePendingRemoteSkipOnly(snapshot: ScreenSnapshot, errorTag: String) {
+        pendingAssistJob?.cancel()
+        pendingAssistJob = scope.launch {
+            try {
+                if (!RemoteSkipController.isRemoteSkipEnabled(this@AutoAccessibilityService)) return@launch
+                if (!SafetyChecker.isAppAllowed(this@AutoAccessibilityService, snapshot.packageName)) return@launch
+                val pending = RemoteSkipController.findSkipCommand(snapshot) ?: return@launch
+                if (!SafetyChecker.isActionSafe(pending)) return@launch
+
+                OverlayService.showPendingAction(pending)
+
+                delay(userIdleThresholdMs)
+                // Secondary guard: abort if the user interacted during the delay.
+                if (System.currentTimeMillis() - lastUserInteractionTime < userIdleThresholdMs) return@launch
+                if (cachedMode != AgentMode.REMOTE_SKIP) return@launch
+
+                lastAssistAttemptTime = System.currentTimeMillis()
+                DatabaseHelper.logAction(
+                    context = this@AutoAccessibilityService,
+                    packageName = snapshot.packageName,
+                    state = snapshot.stableState,
+                    actionType = "${pending.type.name}:REMOTE_PENDING",
+                    actionDetail = "[REMOTE_ONLY] ${pending.target}",
+                    success = true
+                )
+                RemoteSkipController.requestRemoteSkip(
+                    context = this@AutoAccessibilityService,
+                    snapshot = snapshot,
+                    command = pending
+                )
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                Logger.logError("$errorTag: ${e.message}")
+            } finally {
+                // Always clear the bubble preview — whether prompted, cancelled, or errored.
+                OverlayService.clearPendingAction()
             }
         }
     }
 
     /**
-     * Called when the user toggles OFF <-> OBSERVE <-> ASSIST while the service
+     * Called when the user toggles modes while the service
      * is already running. Without this, the stableState debounce in
      * onAccessibilityEvent suppresses re-processing of the current screen,
      * making it look like ASSIST "isn't doing anything" until the next screen
@@ -334,7 +380,7 @@ class AutoAccessibilityService : AccessibilityService() {
         pendingAssistJob = null
         pendingReactorJob?.cancel()
         pendingReactorJob = null
-        if (newMode != AgentMode.ASSIST) {
+        if (newMode != AgentMode.ASSIST && newMode != AgentMode.REMOTE_SKIP) {
             RemoteSkipController.clearPending(this, "mode-change")
         }
 
@@ -362,6 +408,8 @@ class AutoAccessibilityService : AccessibilityService() {
 
         if (newMode == AgentMode.ASSIST) {
             schedulePendingAssist(snapshot, "AssistEngine.executeAction failed after mode change")
+        } else if (newMode == AgentMode.REMOTE_SKIP) {
+            schedulePendingRemoteSkipOnly(snapshot, "Remote skip detection failed after mode change")
         }
     }
 
@@ -500,6 +548,8 @@ class AutoAccessibilityService : AccessibilityService() {
         scheduleReactor(snapshot, mode, "Watchdog ScreenReactor.checkAndReact failed")
         if (mode == AgentMode.ASSIST) {
             schedulePendingAssist(snapshot, "Watchdog AssistEngine.executeAction failed")
+        } else if (mode == AgentMode.REMOTE_SKIP) {
+            schedulePendingRemoteSkipOnly(snapshot, "Watchdog remote skip detection failed")
         }
     }
 
@@ -534,7 +584,7 @@ class AutoAccessibilityService : AccessibilityService() {
     fun executeRemoteSkip(request: RemoteSkipRequest, source: String) {
         scope.launch {
             try {
-                if (cachedMode != AgentMode.ASSIST) return@launch
+                if (cachedMode != AgentMode.ASSIST && cachedMode != AgentMode.REMOTE_SKIP) return@launch
                 if (!SafetyChecker.isActionSafe(request.command)) return@launch
                 if (!SafetyChecker.isAppAllowed(this@AutoAccessibilityService, request.packageName)) return@launch
 
