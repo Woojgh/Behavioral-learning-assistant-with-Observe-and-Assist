@@ -21,13 +21,14 @@ import kotlinx.coroutines.*
 class MainActivity : AppCompatActivity() {
     companion object {
         private const val REQUEST_NOTIFICATIONS_CODE = 10_031
+        private const val REQUEST_MICROPHONE_CODE = 10_032
     }
 
     private lateinit var statusText: TextView
-    private lateinit var statsText: TextView
-    private lateinit var modeButton: Button
     private lateinit var overlayButton: Button
-    private lateinit var remoteSkipToggleButton: Button
+    private lateinit var watchSkipToggleButton: Button
+    private lateinit var earbudSkipToggleButton: Button
+    private lateinit var voiceSkipToggleButton: Button
     private lateinit var watchTestButton: Button
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -49,56 +50,65 @@ class MainActivity : AppCompatActivity() {
 
         // Title
         layout.addView(TextView(this).apply {
-            text = "AI Assistant"
+            text = "Watch Me Skip"
             textSize = 26f
             gravity = Gravity.CENTER
             setPadding(0, 0, 0, 16)
         })
 
-        // Service & mode status
+        // Service status
         statusText = TextView(this).apply {
             textSize = 14f
             gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 8)
+            setPadding(0, 0, 0, 24)
         }
         layout.addView(statusText)
 
-        // Learning stats
-        statsText = TextView(this).apply {
-            textSize = 13f
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 24)
-        }
-        layout.addView(statsText)
+        // ===================== TOGGLES =====================
+        layout.addView(sectionHeader("Toggles"))
 
-        // --- Mode Cycle Button: OFF -> OBSERVE -> ASSIST -> REMOTE_SKIP -> OFF ---
-        modeButton = Button(this).apply {
+        watchSkipToggleButton = Button(this).apply {
             setOnClickListener {
-                val current = AutoAccessibilityService.getMode(this@MainActivity)
-                val next = when (current) {
-                    AgentMode.OFF -> AgentMode.OBSERVE
-                    AgentMode.OBSERVE -> AgentMode.ASSIST
-                    AgentMode.ASSIST -> AgentMode.REMOTE_SKIP
-                    AgentMode.REMOTE_SKIP -> AgentMode.OFF
+                val enabled = RemoteSkipController.isWatchSkipEnabled(this@MainActivity)
+                if (enabled && RemoteSkipController.countEnabledMethods(this@MainActivity) <= 1) {
+                    android.widget.Toast.makeText(this@MainActivity, "At least one skip method must be enabled", android.widget.Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
                 }
-                AutoAccessibilityService.setMode(this@MainActivity, next)
-                if (next == AgentMode.ASSIST || next == AgentMode.REMOTE_SKIP) {
-                    maybeRequestNotificationPermission()
-                }
+                RemoteSkipController.setWatchSkipEnabled(this@MainActivity, !enabled)
                 refreshStatus()
             }
         }
-        layout.addView(modeButton, buttonParams())
+        layout.addView(watchSkipToggleButton, buttonParams())
 
-        // --- Accessibility Settings ---
-        layout.addView(Button(this).apply {
-            text = "Open Accessibility Settings"
+        earbudSkipToggleButton = Button(this).apply {
             setOnClickListener {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                val enabled = RemoteSkipController.isEarbudSkipEnabled(this@MainActivity)
+                if (enabled && RemoteSkipController.countEnabledMethods(this@MainActivity) <= 1) {
+                    android.widget.Toast.makeText(this@MainActivity, "At least one skip method must be enabled", android.widget.Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                RemoteSkipController.setEarbudSkipEnabled(this@MainActivity, !enabled)
+                refreshStatus()
             }
-        }, buttonParams())
+        }
+        layout.addView(earbudSkipToggleButton, buttonParams())
 
-        // --- Overlay Toggle ---
+        voiceSkipToggleButton = Button(this).apply {
+            setOnClickListener {
+                val enabled = VoiceSkipListener.isVoiceSkipEnabled(this@MainActivity)
+                if (enabled && RemoteSkipController.countEnabledMethods(this@MainActivity) <= 1) {
+                    android.widget.Toast.makeText(this@MainActivity, "At least one skip method must be enabled", android.widget.Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                if (!enabled) {
+                    maybeRequestMicrophonePermission()
+                }
+                VoiceSkipListener.setVoiceSkipEnabled(this@MainActivity, !enabled)
+                refreshStatus()
+            }
+        }
+        layout.addView(voiceSkipToggleButton, buttonParams())
+
         overlayButton = Button(this).apply {
             text = "Enable Overlay"
             setOnClickListener {
@@ -115,17 +125,9 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(overlayButton, buttonParams())
 
-        // --- Remote Skip Confirmation Toggle ---
-        remoteSkipToggleButton = Button(this).apply {
-            setOnClickListener {
-                val enabled = RemoteSkipController.isRemoteSkipEnabled(this@MainActivity)
-                RemoteSkipController.setRemoteSkipEnabled(this@MainActivity, !enabled)
-                refreshStatus()
-            }
-        }
-        layout.addView(remoteSkipToggleButton, buttonParams())
+        // ===================== TESTING =====================
+        layout.addView(sectionHeader("Testing"))
 
-        // --- Watch Prompt Test ---
         watchTestButton = Button(this).apply {
             text = "Test Watch Prompt"
             setOnClickListener {
@@ -134,43 +136,21 @@ class MainActivity : AppCompatActivity() {
             }
         }
         layout.addView(watchTestButton, buttonParams())
-        // --- Safety Settings ---
+
+        // ===================== SETTINGS =====================
+        layout.addView(sectionHeader("Settings"))
+
+        layout.addView(Button(this).apply {
+            text = "Open Accessibility Settings"
+            setOnClickListener {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+        }, buttonParams())
+
         layout.addView(Button(this).apply {
             text = "Safety Settings"
             setOnClickListener {
                 startActivity(Intent(this@MainActivity, SafetyActivity::class.java))
-            }
-        }, buttonParams())
-
-        // --- Manage Rules ---
-        layout.addView(Button(this).apply {
-            text = "Manage Rules"
-            setOnClickListener {
-                startActivity(Intent(this@MainActivity, RulesActivity::class.java))
-            }
-        }, buttonParams())
-
-        // --- View History ---
-        layout.addView(Button(this).apply {
-            text = "View History"
-            setOnClickListener {
-                startActivity(Intent(this@MainActivity, LogActivity::class.java))
-            }
-        }, buttonParams())
-
-        // --- View Patterns ---
-        layout.addView(Button(this).apply {
-            text = "View Patterns"
-            setOnClickListener {
-                startActivity(Intent(this@MainActivity, PatternsActivity::class.java))
-            }
-        }, buttonParams())
-
-        // --- System Patterns ---
-        layout.addView(Button(this).apply {
-            text = "System Patterns"
-            setOnClickListener {
-                startActivity(Intent(this@MainActivity, SystemPatternsActivity::class.java))
             }
         }, buttonParams())
 
@@ -180,47 +160,31 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        val mode = AutoAccessibilityService.getMode(this)
-        if (mode == AgentMode.ASSIST || mode == AgentMode.REMOTE_SKIP) {
-            maybeRequestNotificationPermission()
+        // Always enable REMOTE_SKIP — skip detection is the app's purpose
+        if (AutoAccessibilityService.getMode(this) != AgentMode.REMOTE_SKIP) {
+            AutoAccessibilityService.setMode(this, AgentMode.REMOTE_SKIP)
+        }
+        maybeRequestNotificationPermission()
+        // Auto-start overlay if permission is granted
+        if (Settings.canDrawOverlays(this) && OverlayService.instance == null) {
+            startForegroundService(Intent(this, OverlayService::class.java))
         }
         refreshStatus()
-        loadStats()
     }
 
     private fun refreshStatus() {
         val serviceConnected = AutoAccessibilityService.instance != null
-        val mode = AutoAccessibilityService.getMode(this)
-
-        val serviceLabel = if (serviceConnected) "Service: Connected" else "Service: Disconnected"
-        val notificationsLabel = if (!hasNotificationPermission()) " | Notifications: OFF" else ""
-        statusText.text = "$serviceLabel  |  Mode: ${mode.name}$notificationsLabel"
-
-        modeButton.text = when (mode) {
-            AgentMode.OFF -> "Turn ON (Observe Mode)"
-            AgentMode.OBSERVE -> "Switch to Assist Mode"
-            AgentMode.ASSIST -> "Switch to Remote Skip Mode"
-            AgentMode.REMOTE_SKIP -> "Turn OFF"
-        }
+        statusText.text = if (serviceConnected) "Service: Connected" else "Service: Disconnected"
 
         val overlayAllowed = Settings.canDrawOverlays(this)
         overlayButton.text = if (overlayAllowed) "Overlay (tap to toggle)" else "Enable Overlay"
 
-        val remoteSkipEnabled = RemoteSkipController.isRemoteSkipEnabled(this)
-        remoteSkipToggleButton.text = if (remoteSkipEnabled) {
-            "Remote Skip Confirm: ON (tap to disable)"
-        } else {
-            "Remote Skip Confirm: OFF (tap to enable)"
-        }
-    }
-
-    private fun loadStats() {
-        scope.launch {
-            val db = DatabaseHelper.getDB(this@MainActivity)
-            val patterns = withContext(Dispatchers.IO) { db.userPatternDao().totalPatterns() }
-            val apps = withContext(Dispatchers.IO) { db.userPatternDao().distinctApps() }
-            statsText.text = "$patterns patterns learned across $apps apps"
-        }
+        watchSkipToggleButton.text = if (RemoteSkipController.isWatchSkipEnabled(this))
+            "Watch Skip: ON" else "Watch Skip: OFF"
+        earbudSkipToggleButton.text = if (RemoteSkipController.isEarbudSkipEnabled(this))
+            "Earbud Gesture Skip: ON" else "Earbud Gesture Skip: OFF"
+        voiceSkipToggleButton.text = if (VoiceSkipListener.isVoiceSkipEnabled(this))
+            "Voice Skip: ON" else "Voice Skip: OFF"
     }
 
     private fun toggleOverlay() {
@@ -231,6 +195,15 @@ class MainActivity : AppCompatActivity() {
             stopService(intent)
         } else {
             startForegroundService(intent)
+        }
+    }
+
+    private fun sectionHeader(title: String): TextView {
+        return TextView(this).apply {
+            text = title
+            textSize = 13f
+            setTextColor(android.graphics.Color.GRAY)
+            setPadding(0, 32, 0, 8)
         }
     }
 
@@ -263,6 +236,22 @@ class MainActivity : AppCompatActivity() {
             this,
             arrayOf(Manifest.permission.POST_NOTIFICATIONS),
             REQUEST_NOTIFICATIONS_CODE
+        )
+    }
+
+    private fun hasMicrophonePermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun maybeRequestMicrophonePermission() {
+        if (hasMicrophonePermission()) return
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.RECORD_AUDIO),
+            REQUEST_MICROPHONE_CODE
         )
     }
 }

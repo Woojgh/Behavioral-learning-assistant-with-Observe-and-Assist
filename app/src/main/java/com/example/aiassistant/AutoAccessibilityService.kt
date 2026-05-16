@@ -623,8 +623,10 @@ class AutoAccessibilityService : AccessibilityService() {
                     return@launch
                 }
 
-                val commandToExecute = when (request.command.type) {
-                    ActionType.CLICK -> RemoteSkipController.findSkipCommand(liveSnapshot)
+                val commandToExecute = when {
+                    // Picker-chosen targets: use exact label, don't re-scan by keyword
+                    request.origin == SkipOrigin.PICKER -> request.command
+                    request.command.type == ActionType.CLICK -> RemoteSkipController.findSkipCommand(liveSnapshot)
                     else -> request.command
                 }
                 if (commandToExecute == null) {

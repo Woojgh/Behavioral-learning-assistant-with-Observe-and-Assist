@@ -88,8 +88,10 @@ class OverlayService : Service() {
     // Expanded panel
     private var panelView: LinearLayout? = null
     private var panelStatusTv: TextView? = null
-    private val panelModeBtns = Array<Button?>(4) { null } // [OFF, OBSERVE, ASSIST, REMOTE_SKIP]
-    private var panelRemoteSkipBtn: Button? = null
+    private var panelModeBtn: Button? = null
+    private var panelWatchSkipBtn: Button? = null
+    private var panelEarbudSkipBtn: Button? = null
+    private var panelVoiceSkipBtn: Button? = null
     private var panelServiceStatusTv: TextView? = null
     private var panelServiceBtn: Button? = null
     private var panelRefreshRunnable: Runnable? = null
@@ -108,6 +110,14 @@ class OverlayService : Service() {
     private var dragTouchX = 0f
     private var dragTouchY = 0f
     private var isDragging = false
+
+    // Button picker
+    private var pickerView: ScrollView? = null
+
+    // Dismiss zone
+    private var dismissView: TextView? = null
+    private var dismissParams: WindowManager.LayoutParams? = null
+    private var isOverDismissZone = false
 
     // -------------------------------------------------------------------------
     // Lifecycle
@@ -128,6 +138,8 @@ class OverlayService : Service() {
         instance = null
         safeRemove(bubbleView)
         safeRemove(panelView)
+        safeRemove(pickerView)
+        safeRemove(dismissView)
     }
 
     // -------------------------------------------------------------------------
@@ -180,6 +192,7 @@ class OverlayService : Service() {
                     dragTouchX = event.rawX
                     dragTouchY = event.rawY
                     isDragging = false
+                    isOverDismissZone = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -187,18 +200,24 @@ class OverlayService : Service() {
                     val dy = (event.rawY - dragTouchY).toInt()
                     if (!isDragging && (kotlin.math.abs(dx) > 10 || kotlin.math.abs(dy) > 10)) {
                         isDragging = true
+                        showDismissZone()
                     }
                     if (isDragging) {
                         params.x = dragInitX + dx
                         params.y = dragInitY + dy
                         try { windowManager?.updateViewLayout(v, params) } catch (_: Exception) {}
+                        updateDismissHighlight(event.rawX, event.rawY)
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!isDragging) {
+                    if (isDragging && isOverDismissZone) {
+                        hideDismissZone()
+                        stopSelf()
+                    } else if (isDragging) {
+                        hideDismissZone()
+                    } else {
                         if (pendingActionText != null) {
-                            // Tap while action is pending — cancel it.
                             AutoAccessibilityService.instance?.cancelPendingAssist()
                         } else {
                             togglePanel()
@@ -215,25 +234,23 @@ class OverlayService : Service() {
 
     private fun updateBubbleAppearance() {
         val mode = AutoAccessibilityService.cachedMode
+        val active = mode == AgentMode.REMOTE_SKIP
         val connected = AutoAccessibilityService.instance != null
         bubbleView?.apply {
             val pending = pendingActionText
             if (pending != null) {
-                // Pending state: show truncated target with a cancel hint.
                 val label = if (pending.length > 9) pending.take(9) + "…" else pending
                 text = "⧖ $label"
                 background = createBubbleBackground(
-                    Color.argb(220, 160, 100, 10), // amber — distinct from all mode colours
+                    Color.argb(220, 160, 100, 10),
                     serviceColor(connected)
                 )
             } else {
-                text = when (mode) {
-                    AgentMode.OFF     -> "AI\nOFF"
-                    AgentMode.OBSERVE -> "AI\nOBS"
-                    AgentMode.ASSIST  -> "AI\nAST"
-                    AgentMode.REMOTE_SKIP -> "AI\nRMT"
-                }
-                background = createBubbleBackground(modeColor(mode), serviceColor(connected))
+                text = if (active) "SKIP\nON" else "SKIP\nOFF"
+                background = createBubbleBackground(
+                    if (active) Color.argb(215, 130, 70, 170) else Color.argb(215, 70, 70, 70),
+                    serviceColor(connected)
+                )
             }
         }
     }
@@ -275,7 +292,7 @@ class OverlayService : Service() {
             gravity = Gravity.CENTER_VERTICAL
         }
         header.addView(TextView(this).apply {
-            text = "AI Assistant"
+            text = "Watch Me Skip"
             textSize = 14f
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -300,54 +317,59 @@ class OverlayService : Service() {
         panelStatusTv = statusTv
         panel.addView(statusTv, fullWidthWrap())
 
-        // -- Mode section --
-        panel.addView(sectionLabel("Mode", bottomPad = dp(6)))
-
+        // -- Mode toggle: Off / Remote Skip --
+        panel.addView(sectionLabel("Skip Detection", bottomPad = dp(6)))
         val currentMode = AutoAccessibilityService.cachedMode
-        val modeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val modeList = listOf(
-            AgentMode.OFF     to "Off",
-            AgentMode.OBSERVE to "Observe",
-            AgentMode.ASSIST  to "Assist",
-            AgentMode.REMOTE_SKIP to "Remote"
-        )
+        val isActive = currentMode == AgentMode.REMOTE_SKIP
+        val modeBtn = actionButton(modeToggleLabel(isActive)) {
+            val active = AutoAccessibilityService.cachedMode == AgentMode.REMOTE_SKIP
+            val next = if (active) AgentMode.OFF else AgentMode.REMOTE_SKIP
+            AutoAccessibilityService.setMode(this@OverlayService, next)
+            updateBubbleAppearance()
+            panelModeBtn?.text = modeToggleLabel(!active)
+        }
+        panelModeBtn = modeBtn
+        panel.addView(modeBtn)
 
-        modeList.forEachIndexed { i, (mode, label) ->
-            val btn = Button(this).apply {
-                text = label
-                textSize = 10f
-                setPadding(dp(4), dp(2), dp(4), dp(2))
-                setBackgroundColor(modeBtnColor(mode, active = currentMode == mode))
-                setTextColor(Color.WHITE)
-                layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-                ).apply { if (i < modeList.lastIndex) marginEnd = dp(4) }
+        // -- Skip method toggles --
+        panel.addView(sectionLabel("Confirmation Methods", bottomPad = dp(4)))
 
-                setOnClickListener {
-                    AutoAccessibilityService.setMode(this@OverlayService, mode)
-                    updateBubbleAppearance()
-                    // Refresh all mode button highlights in-place
-                    modeList.forEachIndexed { j, (m, _) ->
-                        panelModeBtns[j]?.setBackgroundColor(modeBtnColor(m, active = m == mode))
-                    }
-                }
+        val watchBtn = actionButton(skipMethodLabel("Watch", RemoteSkipController.isWatchSkipEnabled(this))) {
+            val on = RemoteSkipController.isWatchSkipEnabled(this@OverlayService)
+            if (on && RemoteSkipController.countEnabledMethods(this@OverlayService) <= 1) {
+                postStatus("At least one method must be on")
+                return@actionButton
             }
-            panelModeBtns[i] = btn
-            modeRow.addView(btn)
+            RemoteSkipController.setWatchSkipEnabled(this@OverlayService, !on)
+            refreshAllMethodButtons()
         }
-        panel.addView(modeRow, fullWidthWrap().apply { bottomMargin = dp(10) })
+        panelWatchSkipBtn = watchBtn
+        panel.addView(watchBtn)
 
-        // -- Remote skip confirmation toggle --
-        panel.addView(sectionLabel("Remote Skip Confirmation", bottomPad = dp(4)))
-        val remoteSkipEnabled = RemoteSkipController.isRemoteSkipEnabled(this)
-        val remoteSkipBtn = actionButton(remoteSkipToggleLabel(remoteSkipEnabled)) {
-            val current = RemoteSkipController.isRemoteSkipEnabled(this@OverlayService)
-            val next = !current
-            RemoteSkipController.setRemoteSkipEnabled(this@OverlayService, next)
-            panelRemoteSkipBtn?.text = remoteSkipToggleLabel(next)
+        val earbudBtn = actionButton(skipMethodLabel("Earbud Gesture", RemoteSkipController.isEarbudSkipEnabled(this))) {
+            val on = RemoteSkipController.isEarbudSkipEnabled(this@OverlayService)
+            if (on && RemoteSkipController.countEnabledMethods(this@OverlayService) <= 1) {
+                postStatus("At least one method must be on")
+                return@actionButton
+            }
+            RemoteSkipController.setEarbudSkipEnabled(this@OverlayService, !on)
+            refreshAllMethodButtons()
         }
-        panelRemoteSkipBtn = remoteSkipBtn
-        panel.addView(remoteSkipBtn)
+        panelEarbudSkipBtn = earbudBtn
+        panel.addView(earbudBtn)
+
+        val voiceSkipBtn = actionButton(skipMethodLabel("Voice", VoiceSkipListener.isVoiceSkipEnabled(this))) {
+            val on = VoiceSkipListener.isVoiceSkipEnabled(this@OverlayService)
+            if (on && RemoteSkipController.countEnabledMethods(this@OverlayService) <= 1) {
+                postStatus("At least one method must be on")
+                return@actionButton
+            }
+            VoiceSkipListener.setVoiceSkipEnabled(this@OverlayService, !on)
+            refreshAllMethodButtons()
+        }
+        panelVoiceSkipBtn = voiceSkipBtn
+        panel.addView(voiceSkipBtn)
+
         // -- Service status + toggle --
         // Android doesn't allow programmatic enable/disable of accessibility services;
         // the best we can do is show connection state and deep-link to the exact service
@@ -380,6 +402,60 @@ class OverlayService : Service() {
         panelServiceBtn = svcBtn
         panel.addView(svcBtn)
 
+        // -- Button Picker --
+        panel.addView(sectionLabel("Button Picker", bottomPad = dp(4)))
+
+        // Auto-suggest: show single-word buttons when a video player is on screen
+        val autoSnapshot = AutoAccessibilityService.lastSnapshot
+        if (autoSnapshot != null) {
+            val quickButtons = RemoteSkipController.collectVideoOverlayButtons(autoSnapshot)
+            if (quickButtons.isNotEmpty()) {
+                panel.addView(TextView(this).apply {
+                    text = "Quick actions"
+                    textSize = 9f
+                    setTextColor(Color.argb(120, 170, 170, 170))
+                    setPadding(0, 0, 0, dp(4))
+                })
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                }
+                for (label in quickButtons.take(5)) {
+                    row.addView(Button(this).apply {
+                        text = label
+                        textSize = 11f
+                        setBackgroundColor(Color.argb(200, 70, 50, 100))
+                        setTextColor(Color.WHITE)
+                        setPadding(dp(12), dp(4), dp(12), dp(4))
+                        setOnClickListener {
+                            dismissPanel()
+                            RemoteSkipController.requestPickerSkip(this@OverlayService, label)
+                        }
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply { marginEnd = dp(6); bottomMargin = dp(6) }
+                    })
+                }
+                panel.addView(row, fullWidthWrap())
+            }
+        }
+
+        panel.addView(actionButton("Scan All Buttons") {
+            val snapshot = AutoAccessibilityService.lastSnapshot
+            if (snapshot == null) {
+                postStatus("No screen data — is the service connected?")
+                return@actionButton
+            }
+            val categorized = RemoteSkipController.collectClickableButtons(snapshot)
+            if (categorized.isEmpty()) {
+                postStatus("No clickable buttons found")
+                return@actionButton
+            }
+            dismissPanel()
+            showButtonPicker(categorized)
+        })
+
         // -- Open App --
         panel.addView(actionButton("Open App") {
             startActivity(Intent(this@OverlayService, MainActivity::class.java).apply {
@@ -398,10 +474,12 @@ class OverlayService : Service() {
         safeRemove(panelView)
         panelView = null
         panelStatusTv = null
-        panelRemoteSkipBtn = null
+        panelModeBtn = null
+        panelWatchSkipBtn = null
+        panelEarbudSkipBtn = null
+        panelVoiceSkipBtn = null
         panelServiceStatusTv = null
         panelServiceBtn = null
-        panelModeBtns.fill(null)
     }
 
     /**
@@ -438,28 +516,133 @@ class OverlayService : Service() {
         panelServiceBtn?.text =
             if (connected) "Disable Service \u2192" else "Enable Service \u2192"
 
-        // Mode button highlights (in case mode changed from the main app)
-        val currentMode = AutoAccessibilityService.cachedMode
-        listOf(AgentMode.OFF, AgentMode.OBSERVE, AgentMode.ASSIST, AgentMode.REMOTE_SKIP).forEachIndexed { i, mode ->
-            panelModeBtns[i]?.setBackgroundColor(modeBtnColor(mode, active = mode == currentMode))
-        }
-        panelRemoteSkipBtn?.text =
-            remoteSkipToggleLabel(RemoteSkipController.isRemoteSkipEnabled(this))
+        // Mode toggle (in case mode changed from the main app)
+        panelModeBtn?.text =
+            modeToggleLabel(AutoAccessibilityService.cachedMode == AgentMode.REMOTE_SKIP)
+        refreshAllMethodButtons()
 
         // Keep bubble in sync too
         updateBubbleAppearance()
     }
 
     // -------------------------------------------------------------------------
+    // Button Picker
+    // -------------------------------------------------------------------------
+
+    private fun showButtonPicker(categorized: CategorizedButtons) {
+        dismissButtonPicker()
+        val wm = windowManager ?: return
+        val bp = bubbleParams ?: return
+
+        val screenHeight = resources.displayMetrics.heightPixels
+        val maxHeight = (screenHeight * 0.55).toInt()
+
+        val pickerParams = WindowManager.LayoutParams(
+            dp(280),
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = maxOf(0, bp.x - dp(280) + dp(80))
+            y = bp.y + dp(75)
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.argb(245, 22, 22, 22))
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+        }
+
+        // Header
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(TextView(this).apply {
+            text = "Buttons on Screen"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        header.addView(TextView(this).apply {
+            text = "\u2715"
+            textSize = 16f
+            setTextColor(Color.argb(200, 180, 180, 180))
+            setPadding(dp(12), 0, 0, 0)
+            setOnClickListener { dismissButtonPicker() }
+        })
+        container.addView(header, fullWidthWrap().apply { bottomMargin = dp(8) })
+
+        container.addView(TextView(this).apply {
+            text = "Tap a button to confirm remotely"
+            textSize = 10f
+            setTextColor(Color.argb(140, 170, 170, 170))
+            setPadding(0, 0, 0, dp(8))
+        })
+
+        // Primary buttons (≤3 words)
+        for (label in categorized.primary) {
+            container.addView(makePickerButton(label))
+        }
+
+        // Extended buttons (>3 words) under a separator
+        if (categorized.extended.isNotEmpty()) {
+            container.addView(TextView(this).apply {
+                text = "More"
+                textSize = 10f
+                setTextColor(Color.argb(140, 170, 170, 170))
+                setPadding(0, dp(10), 0, dp(4))
+            })
+            for (label in categorized.extended) {
+                container.addView(makePickerButton(label))
+            }
+        }
+
+        val scroll = ScrollView(this).apply {
+            addView(container)
+        }
+        scroll.layoutParams = WindowManager.LayoutParams(
+            dp(280),
+            maxHeight,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        )
+
+        pickerView = scroll
+        wm.addView(scroll, pickerParams)
+    }
+
+    private fun makePickerButton(label: String): Button {
+        return Button(this).apply {
+            val display = if (label.length > 40) label.take(40) + "\u2026" else label
+            text = display
+            textSize = 12f
+            setBackgroundColor(Color.argb(180, 50, 50, 50))
+            setTextColor(Color.WHITE)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            setOnClickListener {
+                dismissButtonPicker()
+                RemoteSkipController.requestPickerSkip(this@OverlayService, label)
+            }
+            layoutParams = fullWidthWrap().apply { bottomMargin = dp(4) }
+        }
+    }
+
+    private fun dismissButtonPicker() {
+        safeRemove(pickerView)
+        pickerView = null
+    }
+
+    // -------------------------------------------------------------------------
     // Color helpers
     // -------------------------------------------------------------------------
 
-    private fun modeColor(mode: AgentMode): Int = when (mode) {
-        AgentMode.OFF     -> Color.argb(215, 70, 70, 70)
-        AgentMode.OBSERVE -> Color.argb(215, 20, 90, 180)
-        AgentMode.ASSIST  -> Color.argb(215, 20, 140, 60)
-        AgentMode.REMOTE_SKIP -> Color.argb(215, 130, 70, 170)
-    }
     private fun serviceColor(connected: Boolean): Int =
         if (connected) Color.argb(230, 80, 210, 130) else Color.argb(230, 220, 80, 80)
 
@@ -471,11 +654,17 @@ class OverlayService : Service() {
             cornerRadiusPx = dp(14).toFloat()
         )
 
-    private fun modeBtnColor(mode: AgentMode, active: Boolean): Int =
-        if (active) modeColor(mode) else Color.argb(180, 50, 50, 50)
-    private fun remoteSkipToggleLabel(enabled: Boolean): String =
-        if (enabled) "Remote Skip: ON (tap to disable)"
-        else "Remote Skip: OFF (tap to enable)"
+    private fun modeToggleLabel(active: Boolean): String =
+        if (active) "Skip Detection: ON (tap to disable)"
+        else "Skip Detection: OFF (tap to enable)"
+    private fun skipMethodLabel(name: String, enabled: Boolean): String =
+        if (enabled) "$name: ON" else "$name: OFF"
+
+    private fun refreshAllMethodButtons() {
+        panelWatchSkipBtn?.text = skipMethodLabel("Watch", RemoteSkipController.isWatchSkipEnabled(this))
+        panelEarbudSkipBtn?.text = skipMethodLabel("Earbud Gesture", RemoteSkipController.isEarbudSkipEnabled(this))
+        panelVoiceSkipBtn?.text = skipMethodLabel("Voice", VoiceSkipListener.isVoiceSkipEnabled(this))
+    }
 
     private class SplitBottomColorDrawable(
         private val topColor: Int,
@@ -552,6 +741,81 @@ class OverlayService : Service() {
 
     private fun safeRemove(view: View?) {
         view?.let { try { windowManager?.removeView(it) } catch (_: Exception) {} }
+    }
+
+    // -------------------------------------------------------------------------
+    // Dismiss zone
+    // -------------------------------------------------------------------------
+
+    private fun showDismissZone() {
+        if (dismissView != null) return
+        val wm = windowManager ?: return
+        val screenHeight = resources.displayMetrics.heightPixels
+
+        val params = WindowManager.LayoutParams(
+            dp(56),
+            dp(56),
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = screenHeight - dp(90)
+        }
+        dismissParams = params
+
+        val view = TextView(this).apply {
+            text = "\u2715"
+            textSize = 24f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            background = createCircleDrawable(Color.argb(200, 180, 40, 40))
+        }
+        dismissView = view
+        wm.addView(view, params)
+    }
+
+    private fun hideDismissZone() {
+        safeRemove(dismissView)
+        dismissView = null
+        dismissParams = null
+        isOverDismissZone = false
+    }
+
+    private fun updateDismissHighlight(rawX: Float, rawY: Float) {
+        val dv = dismissView ?: return
+        val dp = dismissParams ?: return
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+
+        // Dismiss zone center position
+        val zoneX = screenWidth / 2f
+        val zoneY = dp.y + dp(28).toFloat()
+
+        val dist = kotlin.math.hypot((rawX - zoneX).toDouble(), (rawY - zoneY).toDouble())
+        val over = dist < dp(50)
+        if (over != isOverDismissZone) {
+            isOverDismissZone = over
+            dv.background = createCircleDrawable(
+                if (over) Color.argb(240, 220, 50, 50) else Color.argb(200, 180, 40, 40)
+            )
+            dv.textSize = if (over) 28f else 24f
+        }
+    }
+
+    private fun createCircleDrawable(color: Int): Drawable {
+        return object : Drawable() {
+            private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
+            override fun draw(canvas: Canvas) {
+                val cx = bounds.exactCenterX()
+                val cy = bounds.exactCenterY()
+                canvas.drawCircle(cx, cy, kotlin.math.min(cx, cy), paint)
+            }
+            override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+            override fun setColorFilter(cf: ColorFilter?) { paint.colorFilter = cf }
+            override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+        }
     }
 
     // -------------------------------------------------------------------------

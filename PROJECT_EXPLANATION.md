@@ -1,39 +1,45 @@
 # Project Explanation
 ## What this project is
-Behavioral Learning Assistant is an on-device automation assistant focused on reducing repetitive phone interactions.
+This project is focused on one core behavior: **automatic skip-button detection with remote human-initiated skipping**.
 
-The main Android app learns from repeated user behavior in **Observe** mode and can replay safe, learned actions in **Assist** mode.
+The Android app detects likely skip actions on-screen, then waits for a remote human confirmation (watch tap or earbud gesture) before executing the skip.
 
-## Core idea
-Instead of rule scripting, this project learns patterns from what the user actually does on specific screens:
-- observe taps, scrolls, text input, and certain device-setting changes
-- fingerprint screen structure to recognize repeat contexts
-- require repeated observations before any automatic replay
-- apply safety checks before executing actions
+## Core flow: detect → prompt → human confirm → execute
+1. The app detects a likely skip target from the live screen (for example, text containing “skip”).
+2. It opens a short remote confirmation window (about 20 seconds).
+3. It sends a watch-style prompt (`SKIP`) and also listens for supported earbud media gestures.
+4. A human confirms remotely (watch action or earbud next/fast-forward gesture).
+5. The app re-validates the current screen and safety checks, then performs the skip.
+6. If confirmation never comes, the app changes, or timeout occurs, it cancels safely.
+
+## Why this matters
+- keeps a human in the loop for skip actions
+- removes repeated manual tapping on skip prompts
+- supports hands-busy contexts through remote confirmation
+- keeps the behavior local/on-device with no cloud dependency
 
 ## Main components
-- `app/`: Android implementation (Kotlin, Accessibility Service, Room, coroutine-based engine)
-- `BehavioralAssistant-iOS/`: iOS port of models/business logic with platform-safe adaptations
-- `README.md`: full product overview, setup, architecture, safety, and privacy details
+- `app/`: Android implementation, including remote-skip detection and confirmation pipeline
+- `app/src/main/java/com/example/aiassistant/RemoteSkipController.kt`: watch/earbud prompt and confirmation orchestration
+- `app/src/main/java/com/example/aiassistant/AutoAccessibilityService.kt`: live detection and remote-confirmed execution path
+- `README.md`: broader project overview and setup details
 
-## Safety and privacy model
-- actions are blocked for dangerous intents (purchase/delete/pay/reset-style patterns)
-- assist actions only trigger after confidence thresholds are met
-- app exclusions and cooldowns reduce accidental automation
-- learning/action logs are stored locally for review
-- no cloud dependency is required for core behavior
+## Safety and control model
+- remote skip acts only inside a short confirmation window
+- action is re-validated against current live UI before execution
+- safety checks and cooldowns still apply before any click
+- pending requests are cancelled on timeout, dismissal, or screen/app change
 
 ## How to run
 ### Android
 1. Open the repo in Android Studio.
 2. Sync Gradle and run on API 26+.
-3. Enable the accessibility service from the app’s onboarding flow.
-4. Start in Observe mode, then switch to Assist mode when enough patterns are learned.
+3. Enable the accessibility service from the app.
+4. Use **REMOTE_SKIP** mode to test auto-detect + remote human confirmation.
+5. Optionally use the watch prompt test button to verify watch action flow.
 
 ### iOS
-1. Open `BehavioralAssistant-iOS/BehavioralAssistant.xcodeproj` in Xcode.
-2. Build and run on iOS 16+.
-3. Use it as an in-app behavioral engine (iOS does not allow Android-style cross-app accessibility automation).
+iOS does not support Android-style cross-app accessibility control, so remote skip automation is Android-first in this branch.
 
 ## Standalone branch snapshot note
-This repository was created as a standalone snapshot of the `feature/remote-skip-watch-earbuds` branch, so it can be developed and shared independently from the original parent repository.
+This repository is a standalone snapshot of `feature/remote-skip-watch-earbuds`, intended for independent development and sharing of the remote human-initiated skip workflow.

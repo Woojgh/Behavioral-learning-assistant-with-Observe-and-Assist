@@ -17,13 +17,27 @@ import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 
+enum class SkipOrigin { AUTO, PICKER }
+
 data class RemoteSkipRequest(
     val packageName: String,
     val stableState: String,
     val looseState: String,
     val command: ActionCommand,
+    val origin: SkipOrigin = SkipOrigin.AUTO,
     val createdAt: Long = System.currentTimeMillis()
 )
+
+/**
+ * Clickable button labels split by word count so the picker can show
+ * short labels prominently and long labels in a secondary section.
+ */
+data class CategorizedButtons(
+    val primary: List<String>,   // 1–3 words
+    val extended: List<String>   // >3 words
+) {
+    fun isEmpty(): Boolean = primary.isEmpty() && extended.isEmpty()
+}
 
 object RemoteSkipController {
     const val ACTION_CONFIRM_REMOTE_SKIP = "com.example.aiassistant.action.CONFIRM_REMOTE_SKIP"
@@ -32,6 +46,8 @@ object RemoteSkipController {
     const val ACTION_DISMISS_REMOTE_SKIP_TEST = "com.example.aiassistant.action.DISMISS_REMOTE_SKIP_TEST"
     private const val PREFS = "ai_assistant_prefs"
     private const val KEY_REMOTE_SKIP_CONFIRM_ENABLED = "remote_skip_confirm_enabled"
+    private const val KEY_WATCH_SKIP_ENABLED = "watch_skip_enabled"
+    private const val KEY_EARBUD_SKIP_ENABLED = "earbud_skip_enabled"
 
     private const val CHANNEL_ID = "remote_skip_watch_channel_v2"
     private const val NOTIFICATION_ID = 71_204
@@ -42,7 +58,16 @@ object RemoteSkipController {
     private const val DISMISSAL_ID_REMOTE_SKIP_TEST = "remote_skip_prompt_test"
     private const val SOURCE_WATCH = "WATCH"
     private const val SOURCE_EARBUD = "EARBUD"
-    private const val SKIP_TOKEN = "skip"
+    private const val SOURCE_VOICE = "VOICE"
+    private val ACTION_TOKENS = listOf("skip", "play now")
+
+    /**
+     * Delay before activating the speech recognizer, giving the prompt tone
+     * time to finish and Bluetooth audio profiles time to switch from A2DP
+     * (media playback) back to SCO (microphone). The voice tone lasts ~760ms;
+     * the extra buffer covers BT profile-switch latency.
+     */
+    private const val VOICE_RECOGNIZER_DELAY_MS = 900L
 
     private val lock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -50,6 +75,51 @@ object RemoteSkipController {
     private var pendingRequest: RemoteSkipRequest? = null
     private var timeoutRunnable: Runnable? = null
     private var mediaSession: MediaSession? = null
+
+    // ---- per-method preferences ------------------------------------------------
+
+    fun isWatchSkipEnabled(context: Context): Boolean {
+        return context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_WATCH_SKIP_ENABLED, true)
+    }
+
+    fun isEarbudSkipEnabled(context: Context): Boolean {
+        return context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_EARBUD_SKIP_ENABLED, true)
+    }
+
+    fun setWatchSkipEnabled(context: Context, enabled: Boolean) {
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_WATCH_SKIP_ENABLED, enabled)
+            .apply()
+    }
+
+    fun setEarbudSkipEnabled(context: Context, enabled: Boolean) {
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_EARBUD_SKIP_ENABLED, enabled)
+            .apply()
+    }
+
+    /**
+     * Returns the number of skip confirmation methods currently enabled.
+     * Used to enforce at-least-one: callers should prevent disabling when this returns 1.
+     */
+    fun countEnabledMethods(context: Context): Int {
+        return listOf(
+            isWatchSkipEnabled(context),
+            isEarbudSkipEnabled(context),
+            VoiceSkipListener.isVoiceSkipEnabled(context)
+        ).count { it }
+    }
+
+    // ---- core remote-skip logic ------------------------------------------------
+
     fun isRemoteSkipEnabled(context: Context): Boolean {
         return context.applicationContext
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -153,7 +223,7 @@ object RemoteSkipController {
             .asSequence()
             .map { it.trim() }
             .filter { it.isNotEmpty() }
-            .filter { containsSkipKeyword(it) }
+            .filter { containsActionKeyword(it) }
             .minByOrNull { it.length }
             ?: return null
         return ActionCommand(type = ActionType.CLICK, target = target)
@@ -161,11 +231,103 @@ object RemoteSkipController {
 
     private fun isSkipClickCommand(command: ActionCommand): Boolean {
         if (command.type != ActionType.CLICK) return false
-        return containsSkipKeyword(command.target)
+        return containsActionKeyword(command.target)
     }
 
-    private fun containsSkipKeyword(text: String): Boolean {
-        return text.contains(SKIP_TOKEN, ignoreCase = true)
+    private fun containsActionKeyword(text: String): Boolean {
+        return ACTION_TOKENS.any { text.contains(it, ignoreCase = true) }
+    }
+
+    /**
+     * Returns the display labels of all clickable elements currently visible on screen,
+     * split into primary (≤3 words) and extended (>3 words) categories.
+     */
+    fun collectClickableButtons(snapshot: ScreenSnapshot): CategorizedButtons {
+        val all = snapshot.nodes
+            .filter { it.isClickable }
+            .mapNotNull { node ->
+                val label = node.text?.trim() ?: node.contentDesc?.trim()
+                label?.takeIf { it.isNotEmpty() && it.length < 80 }
+            }
+            .distinct()
+        val (primary, extended) = all.partition {
+            it.trim().split("\\s+".toRegex()).size <= 3
+        }
+        return CategorizedButtons(primary, extended)
+    }
+
+    /**
+     * Returns true when the accessibility tree contains a likely video-player
+     * surface (SurfaceView, TextureView, VideoView, or a class whose name
+     * contains "Player", "Video", or "Exo").
+     */
+    fun hasVideoPlayer(snapshot: ScreenSnapshot): Boolean {
+        return snapshot.nodes.any { node ->
+            val cls = node.className ?: return@any false
+            cls == "android.view.SurfaceView" ||
+                cls == "android.view.TextureView" ||
+                cls == "android.widget.VideoView" ||
+                cls.contains("Player", ignoreCase = true) ||
+                cls.contains("Video", ignoreCase = true) ||
+                cls.contains("Exo", ignoreCase = true)
+        }
+    }
+
+    /**
+     * When a video player is on screen, returns single-word clickable button
+     * labels suitable for quick-pick auto-suggestions.
+     */
+    fun collectVideoOverlayButtons(snapshot: ScreenSnapshot): List<String> {
+        if (!hasVideoPlayer(snapshot)) return emptyList()
+        return snapshot.nodes
+            .filter { it.isClickable }
+            .mapNotNull { node ->
+                val label = node.text?.trim() ?: node.contentDesc?.trim()
+                label?.takeIf {
+                    it.isNotEmpty() &&
+                        it.length < 80 &&
+                        it.trim().split("\\s+".toRegex()).size == 1
+                }
+            }
+            .distinct()
+    }
+
+    /**
+     * Entry point for picker-chosen buttons. Builds a PICKER-origin request and
+     * runs the same confirmation flow as auto-detected targets.
+     */
+    fun requestPickerSkip(context: Context, buttonLabel: String) {
+        val snapshot = AutoAccessibilityService.lastSnapshot ?: return
+        val command = ActionCommand(type = ActionType.CLICK, target = buttonLabel)
+        val appContext = context.applicationContext
+
+        synchronized(lock) {
+            pendingRequest = RemoteSkipRequest(
+                packageName = snapshot.packageName,
+                stableState = snapshot.stableState,
+                looseState = snapshot.looseState,
+                command = command,
+                origin = SkipOrigin.PICKER
+            )
+        }
+
+        val watchEnabled = isWatchSkipEnabled(appContext)
+        val earbudEnabled = isEarbudSkipEnabled(appContext)
+        val voiceEnabled = VoiceSkipListener.isVoiceSkipEnabled(appContext)
+
+        ensureNotificationChannel(appContext)
+        if (watchEnabled) showWatchNotification(appContext)
+        if (earbudEnabled) enableEarbudGestureWindow(appContext)
+        playPromptTone(voiceEnabled)
+        VoiceSkipListener.startListening(appContext, VOICE_RECOGNIZER_DELAY_MS)
+        scheduleTimeout(appContext)
+
+        val methods = mutableListOf<String>()
+        if (voiceEnabled) methods.add("say \"Skip\" or \"Play now\"")
+        if (watchEnabled) methods.add("watch")
+        if (earbudEnabled) methods.add("earbud")
+        val label = if (buttonLabel.length > 20) buttonLabel.take(20) + "…" else buttonLabel
+        OverlayService.updateStatus("\"$label\" ready — ${methods.joinToString(" / ")}")
     }
 
     fun requestRemoteSkip(context: Context, snapshot: ScreenSnapshot, command: ActionCommand) {
@@ -181,11 +343,27 @@ object RemoteSkipController {
             )
         }
 
+        val watchEnabled = isWatchSkipEnabled(appContext)
+        val earbudEnabled = isEarbudSkipEnabled(appContext)
+        val voiceEnabled = VoiceSkipListener.isVoiceSkipEnabled(appContext)
+        val voicePickOptions = if (voiceEnabled) collectVideoOverlayButtons(snapshot) else emptyList()
+
         ensureNotificationChannel(appContext)
-        showWatchNotification(appContext)
-        enableEarbudGestureWindow(appContext)
+        if (watchEnabled) showWatchNotification(appContext)
+        if (earbudEnabled) enableEarbudGestureWindow(appContext)
+        playPromptTone(voiceEnabled)
+        VoiceSkipListener.startListening(appContext, VOICE_RECOGNIZER_DELAY_MS, voicePickOptions)
         scheduleTimeout(appContext)
-        OverlayService.updateStatus("Skip ready on watch / earbud next gesture")
+
+        val methods = mutableListOf<String>()
+        if (voiceEnabled && voicePickOptions.isNotEmpty()) {
+            methods.add("say a button name")
+        } else if (voiceEnabled) {
+            methods.add("say \"Skip\" or \"Play now\"")
+        }
+        if (watchEnabled) methods.add("watch")
+        if (earbudEnabled) methods.add("earbud")
+        OverlayService.updateStatus("Action ready — ${methods.joinToString(" / ")}")
     }
 
     fun onScreenChanged(context: Context, snapshot: ScreenSnapshot) {
@@ -220,6 +398,27 @@ object RemoteSkipController {
         confirmPending(context.applicationContext, SOURCE_EARBUD)
     }
 
+    fun confirmFromVoice(context: Context) {
+        confirmPending(context.applicationContext, SOURCE_VOICE)
+    }
+
+    /**
+     * Called when the user says a voice-picked button label instead of the
+     * generic "skip" keyword. Swaps the pending request's target to the
+     * spoken label, then confirms as usual.
+     */
+    fun confirmFromVoicePick(context: Context, buttonLabel: String) {
+        val appContext = context.applicationContext
+        synchronized(lock) {
+            val pending = pendingRequest ?: return
+            pendingRequest = pending.copy(
+                command = ActionCommand(type = ActionType.CLICK, target = buttonLabel),
+                origin = SkipOrigin.PICKER
+            )
+        }
+        confirmPending(appContext, SOURCE_VOICE)
+    }
+
     fun clearPending(context: Context, reason: String = "cleared") {
         val hadPending = synchronized(lock) {
             val hadValue = pendingRequest != null
@@ -236,6 +435,8 @@ object RemoteSkipController {
 
     fun release(context: Context) {
         clearPending(context, "release")
+        VoiceSkipListener.stopListening()
+        VoiceSkipListener.releaseTts()
         mediaSession?.release()
         mediaSession = null
     }
@@ -345,6 +546,7 @@ object RemoteSkipController {
     private fun clearPromptSurface(context: Context) {
         cancelTimeout()
         disableEarbudGestureWindow()
+        VoiceSkipListener.stopListening()
         try {
             NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
         } catch (e: SecurityException) {
@@ -381,7 +583,6 @@ object RemoteSkipController {
             .build()
         mediaSession?.setPlaybackState(playbackState)
         mediaSession?.isActive = true
-        playChime()
     }
 
     private fun disableEarbudGestureWindow() {
@@ -436,9 +637,14 @@ object RemoteSkipController {
             keyCode == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD
     }
 
-    private fun playChime() {
-        if (playToneOnStream(AudioManager.STREAM_MUSIC)) return
-        if (playToneOnStream(AudioManager.STREAM_NOTIFICATION)) return
+    private fun playPromptTone(voiceEnabled: Boolean) {
+        if (voiceEnabled) {
+            if (playVoiceToneOnStream(AudioManager.STREAM_MUSIC)) return
+            if (playVoiceToneOnStream(AudioManager.STREAM_NOTIFICATION)) return
+        } else {
+            if (playToneOnStream(AudioManager.STREAM_MUSIC)) return
+            if (playToneOnStream(AudioManager.STREAM_NOTIFICATION)) return
+        }
         Logger.logError("Remote skip chime failed: unable to play tone on available streams")
     }
 
@@ -450,6 +656,23 @@ object RemoteSkipController {
                 toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 170)
             }, 220L)
             mainHandler.postDelayed({ toneGenerator.release() }, 550L)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun playVoiceToneOnStream(streamType: Int): Boolean {
+        return try {
+            val toneGenerator = ToneGenerator(streamType, 100)
+            toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 120)
+            mainHandler.postDelayed({
+                toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 120)
+            }, 180L)
+            mainHandler.postDelayed({
+                toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 260)
+            }, 360L)
+            mainHandler.postDelayed({ toneGenerator.release() }, 760L)
             true
         } catch (_: Exception) {
             false
