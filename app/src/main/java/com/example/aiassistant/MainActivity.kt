@@ -62,14 +62,15 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(statsText)
 
-        // --- Mode Cycle Button: OFF -> OBSERVE -> ASSIST -> OFF ---
+        // --- Mode Cycle Button: OFF -> OBSERVE -> ASSIST -> REMOTE_SKIP -> OFF ---
         modeButton = Button(this).apply {
             setOnClickListener {
                 val current = AutoAccessibilityService.getMode(this@MainActivity)
                 val next = when (current) {
                     AgentMode.OFF -> AgentMode.OBSERVE
                     AgentMode.OBSERVE -> AgentMode.ASSIST
-                    AgentMode.ASSIST -> AgentMode.OFF
+                    AgentMode.ASSIST -> AgentMode.REMOTE_SKIP
+                    AgentMode.REMOTE_SKIP -> AgentMode.OFF
                 }
                 AutoAccessibilityService.setMode(this@MainActivity, next)
                 refreshStatus()
@@ -171,7 +172,8 @@ class MainActivity : AppCompatActivity() {
         modeButton.text = when (mode) {
             AgentMode.OFF -> "Turn ON (Observe Mode)"
             AgentMode.OBSERVE -> "Switch to Assist Mode"
-            AgentMode.ASSIST -> "Turn OFF"
+            AgentMode.ASSIST -> "Switch to Remote Skip Mode"
+            AgentMode.REMOTE_SKIP -> "Turn OFF"
         }
 
         val overlayAllowed = Settings.canDrawOverlays(this)
