@@ -83,4 +83,16 @@ object SafetyChecker {
         current.remove(packageName)
         setExcludedApps(context, current)
     }
+
+    /**
+     * Removes multiple apps from the exclusion list in one write.
+     * Used when resetting learned patterns so old block flags don't linger.
+     */
+    fun removeExcludedApps(context: Context, packageNames: Set<String>) {
+        if (packageNames.isEmpty()) return
+        val current = getExcludedApps(context).toMutableSet()
+        if (current.removeAll(packageNames)) {
+            setExcludedApps(context, current)
+        }
+    }
 }

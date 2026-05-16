@@ -19,6 +19,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statsText: TextView
     private lateinit var modeButton: Button
     private lateinit var overlayButton: Button
+    private lateinit var remoteSkipToggleButton: Button
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -101,6 +102,15 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(overlayButton, buttonParams())
 
+        // --- Remote Skip Confirmation Toggle ---
+        remoteSkipToggleButton = Button(this).apply {
+            setOnClickListener {
+                val enabled = RemoteSkipController.isRemoteSkipEnabled(this@MainActivity)
+                RemoteSkipController.setRemoteSkipEnabled(this@MainActivity, !enabled)
+                refreshStatus()
+            }
+        }
+        layout.addView(remoteSkipToggleButton, buttonParams())
         // --- Safety Settings ---
         layout.addView(Button(this).apply {
             text = "Safety Settings"
@@ -166,6 +176,13 @@ class MainActivity : AppCompatActivity() {
 
         val overlayAllowed = Settings.canDrawOverlays(this)
         overlayButton.text = if (overlayAllowed) "Overlay (tap to toggle)" else "Enable Overlay"
+
+        val remoteSkipEnabled = RemoteSkipController.isRemoteSkipEnabled(this)
+        remoteSkipToggleButton.text = if (remoteSkipEnabled) {
+            "Remote Skip Confirm: ON (tap to disable)"
+        } else {
+            "Remote Skip Confirm: OFF (tap to enable)"
+        }
     }
 
     private fun loadStats() {

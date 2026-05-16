@@ -98,7 +98,10 @@ class PatternsActivity : AppCompatActivity() {
         if (patterns.isEmpty()) return
         AlertDialog.Builder(this)
             .setTitle("Clear All Patterns")
-            .setMessage("Delete all ${patterns.size} learned pattern(s)? This cannot be undone.")
+            .setMessage(
+                "Delete all ${patterns.size} learned pattern(s)? " +
+                        "Blocked status for those apps will also reset. This cannot be undone."
+            )
             .setPositiveButton("Delete All") { _, _ -> clearAll() }
             .setNegativeButton("Cancel", null)
             .show()
@@ -106,8 +109,10 @@ class PatternsActivity : AppCompatActivity() {
 
     private fun clearAll() {
         scope.launch {
+            val affectedPackages = patterns.map { it.packageName }.toSet()
             withContext(Dispatchers.IO) {
                 DatabaseHelper.getDB(this@PatternsActivity).userPatternDao().deleteAll()
+                SafetyChecker.removeExcludedApps(this@PatternsActivity, affectedPackages)
             }
             patterns = emptyList()
             groupedPatterns = emptyMap()
